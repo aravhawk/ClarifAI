@@ -31,7 +31,7 @@ Clarifai is a Next.js 16 relationship mediation app that helps couples and roomm
 ### Prerequisites
 
 - Node.js 20+
-- pnpm 9+
+- npm 10+
 - Supabase project (URL + anon key + service role key)
 - OpenRouter API key
 
@@ -49,8 +49,8 @@ OPENROUTER_API_KEY=
 ### Install & Run
 
 ```bash
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 Open http://localhost:3000.
@@ -58,10 +58,10 @@ Open http://localhost:3000.
 ## Scripts
 
 ```bash
-pnpm dev
-pnpm build
-pnpm start
-pnpm lint
+npm run dev
+npm run build
+npm run start
+npm run lint
 ```
 
 ## Project Notes
@@ -79,6 +79,6 @@ Create room -> Join -> Submit -> Analyze -> Reveal -> Chat -> Pause -> End sessi
 Build and run with:
 
 ```bash
-pnpm build
-pnpm start
+npm run build
+npm run start
 ```

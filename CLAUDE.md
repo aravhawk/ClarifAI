@@ -8,20 +8,20 @@ Clarifai is a Next.js 16 relationship mediation application that helps couples a
 
 ## Development Commands
 
-**Package Manager**: Use `pnpm` exclusively (not npm or yarn).
+**Package Manager**: Use `npm` exclusively.
 
 ```bash
 # Development
-pnpm dev                    # Start dev server on localhost:3000
+npm run dev                 # Start dev server on localhost:3000
 
 # Building
-pnpm build                  # Production build with webpack
+npm run build               # Production build with webpack
 
 # Code Quality
-pnpm lint                   # Run ESLint
+npm run lint                # Run ESLint
 
 # Production
-pnpm start                  # Start production server (requires build first)
+npm run start               # Start production server (requires build first)
 ```
 
 ## Core Architecture
