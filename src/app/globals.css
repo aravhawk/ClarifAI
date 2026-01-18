@@ -1,0 +1,196 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  
+  /* Premium calm palette */
+  --cream: 39 30% 97%;
+  --warm-50: 40 20% 97%;
+  --warm-100: 40 15% 93%;
+  --warm-200: 38 12% 85%;
+  --warm-300: 35 10% 72%;
+  --warm-400: 33 8% 56%;
+  --warm-500: 32 7% 45%;
+  --warm-600: 30 8% 36%;
+  --warm-700: 28 10% 28%;
+  --warm-800: 25 12% 22%;
+  --warm-900: 22 14% 14%;
+  
+  /* Sage green accent */
+  --sage-50: 120 15% 96%;
+  --sage-100: 120 15% 90%;
+  --sage-200: 120 12% 80%;
+  --sage-300: 120 12% 65%;
+  --sage-400: 120 15% 50%;
+  --sage-500: 120 18% 38%;
+  --sage-600: 120 20% 32%;
+
+  /* Sky blue for person distinction */
+  --sky-50: 200 20% 96%;
+  --sky-100: 200 20% 90%;
+  --sky-200: 200 18% 80%;
+  --sky-300: 200 20% 65%;
+  --sky-400: 200 25% 55%;
+  --sky-500: 200 30% 45%;
+  
+  /* Amber for pause/warning */
+  --amber-50: 45 90% 96%;
+  --amber-100: 45 85% 90%;
+  --amber-200: 43 80% 78%;
+  --amber-300: 40 75% 65%;
+  --amber-400: 38 80% 55%;
+  --amber-500: 35 85% 48%;
+
+  --radius: 0.75rem;
+  --background: var(--cream);
+  --foreground: var(--warm-800);
+  --card: 0 0% 100%;
+  --card-foreground: var(--warm-800);
+  --popover: 0 0% 100%;
+  --popover-foreground: var(--warm-800);
+  --primary: var(--sage-500);
+  --primary-foreground: 0 0% 100%;
+  --secondary: var(--warm-100);
+  --secondary-foreground: var(--warm-700);
+  --muted: var(--warm-100);
+  --muted-foreground: var(--warm-500);
+  --accent: var(--sage-100);
+  --accent-foreground: var(--sage-600);
+  --destructive: 0 70% 50%;
+  --border: var(--warm-200);
+  --input: var(--warm-200);
+  --ring: var(--sage-400);
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --font-sans: var(--font-sans);
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  
+  /* Custom colors */
+  --color-cream: hsl(var(--cream));
+  --color-warm-50: hsl(var(--warm-50));
+  --color-warm-100: hsl(var(--warm-100));
+  --color-warm-200: hsl(var(--warm-200));
+  --color-warm-300: hsl(var(--warm-300));
+  --color-warm-400: hsl(var(--warm-400));
+  --color-warm-500: hsl(var(--warm-500));
+  --color-warm-600: hsl(var(--warm-600));
+  --color-warm-700: hsl(var(--warm-700));
+  --color-warm-800: hsl(var(--warm-800));
+  --color-warm-900: hsl(var(--warm-900));
+  --color-sage-50: hsl(var(--sage-50));
+  --color-sage-100: hsl(var(--sage-100));
+  --color-sage-200: hsl(var(--sage-200));
+  --color-sage-300: hsl(var(--sage-300));
+  --color-sage-400: hsl(var(--sage-400));
+  --color-sage-500: hsl(var(--sage-500));
+  --color-sage-600: hsl(var(--sage-600));
+  --color-sky-50: hsl(var(--sky-50));
+  --color-sky-100: hsl(var(--sky-100));
+  --color-sky-200: hsl(var(--sky-200));
+  --color-sky-300: hsl(var(--sky-300));
+  --color-sky-400: hsl(var(--sky-400));
+  --color-sky-500: hsl(var(--sky-500));
+  --color-amber-50: hsl(var(--amber-50));
+  --color-amber-100: hsl(var(--amber-100));
+  --color-amber-200: hsl(var(--amber-200));
+  --color-amber-300: hsl(var(--amber-300));
+  --color-amber-400: hsl(var(--amber-400));
+  --color-amber-500: hsl(var(--amber-500));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  width: 100%;
+}
+
+body {
+  background: linear-gradient(165deg, hsl(var(--cream)) 0%, hsl(var(--warm-100)) 100%);
+  min-height: 100vh;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
+/* Animations */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.03); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-breathe {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.6s ease-out forwards;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Stagger children */
+.stagger > * {
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out forwards;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.1s; }
+.stagger > *:nth-child(2) { animation-delay: 0.2s; }
+.stagger > *:nth-child(3) { animation-delay: 0.3s; }
+.stagger > *:nth-child(4) { animation-delay: 0.4s; }
+.stagger > *:nth-child(5) { animation-delay: 0.5s; }
+.stagger > *:nth-child(6) { animation-delay: 0.6s; }
