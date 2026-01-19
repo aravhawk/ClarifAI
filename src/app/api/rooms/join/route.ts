@@ -18,10 +18,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Display name required' }, { status: 400 })
     }
 
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Get current user (fallback to anonymous)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
+      if (anonError || !anonData?.user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      user = anonData.user
     }
 
     const adminClient = await createAdminClient()

@@ -5,11 +5,15 @@ import { generateRoomCode } from '@/lib/utils/room'
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    // Get current user (fallback to anonymous)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
+      if (anonError || !anonData?.user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      user = anonData.user
     }
 
     const { relationship, displayName } = await request.json()
