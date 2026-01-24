@@ -14,7 +14,7 @@ Clarifai is a Next.js 16 relationship mediation app that helps couples and roomm
 
 - Next.js 16 (App Router) + TypeScript
 - Supabase (Auth, Postgres, Realtime, RLS)
-- OpenRouter (Claude Haiku 4.5) for analysis and guidance
+- Vercel AI Gateway (Claude Haiku 4.5) for analysis and guidance
 - Tailwind CSS v4 + Radix UI
 
 ## Core Flow
@@ -33,7 +33,7 @@ Clarifai is a Next.js 16 relationship mediation app that helps couples and roomm
 - Node.js 20+
 - npm 10+
 - Supabase project (URL + anon key + service role key)
-- OpenRouter API key
+- Vercel AI Gateway API key
 
 ### Environment Variables
 
@@ -43,7 +43,7 @@ Create `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-OPENROUTER_API_KEY=
+AI_GATEWAY_API_KEY=
 ```
 
 ### Install & Run

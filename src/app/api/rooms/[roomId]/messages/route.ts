@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { createOpenRouterClient, AI_MODEL } from '@/lib/openrouter'
+import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
 import { LIVE_GUIDANCE_SYSTEM_PROMPT, buildLiveGuidancePrompt, shouldBlockMessage, type PersonInfo } from '@/lib/prompts'
 import type { LiveGuidanceResult } from '@/lib/prompts'
 import { GUIDANCE_MAX_TOKENS } from '@/lib/constants'
@@ -135,8 +135,8 @@ export async function POST(
     // Call AI for guidance
     let guidance: LiveGuidanceResult | null = null
     try {
-      const openrouter = createOpenRouterClient()
-      const response = await openrouter.chat.completions.create({
+      const gateway = createAiGatewayClient()
+      const response = await gateway.chat.completions.create({
         model: AI_MODEL,
         messages: [
           { role: 'system', content: LIVE_GUIDANCE_SYSTEM_PROMPT },

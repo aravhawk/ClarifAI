@@ -50,7 +50,7 @@ export default function TermsPage() {
           </p>
           <p className="text-warm-600 leading-relaxed mb-4">
             <strong>Third parties:</strong> Your data is processed by our AI provider (Anthropic/Claude 
-            via OpenRouter). We may share or sell anonymized, aggregated datasets for research, analytics, or commercial purposes.
+            via Vercel AI Gateway). We may share or sell anonymized, aggregated datasets for research, analytics, or commercial purposes.
           </p>
 
           <h2 className="text-xl font-semibold text-warm-900 mt-8 mb-4">4. User Conduct</h2>

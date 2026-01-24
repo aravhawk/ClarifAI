@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Clarifai is a Next.js 16 relationship mediation application that helps couples and roommates have productive conversations through AI-guided conflict resolution. The app uses Supabase for real-time data, OpenRouter/Claude for AI analysis, and follows evidence-based conflict resolution methods (Gottman Method, Nonviolent Communication).
+Clarifai is a Next.js 16 relationship mediation application that helps couples and roommates have productive conversations through AI-guided conflict resolution. The app uses Supabase for real-time data, Vercel AI Gateway/Claude for AI analysis, and follows evidence-based conflict resolution methods (Gottman Method, Nonviolent Communication).
 
 ## Development Commands
 
@@ -102,7 +102,7 @@ if (!messageValidation.valid) {
 **Key API Routes**:
 - `/api/rooms` - Create room
 - `/api/rooms/join` - Join existing room
-- `/api/rooms/[roomId]/analyze` - Trigger AI analysis (uses OpenRouter with reasoning tokens)
+- `/api/rooms/[roomId]/analyze` - Trigger AI analysis (uses Vercel AI Gateway with reasoning tokens)
 - `/api/rooms/[roomId]/messages` - Send/fetch messages
 - `/api/rooms/[roomId]/messages/check` - Tone check (FAILS CLOSED on AI error)
 - `/api/rooms/[roomId]/pause` - Pause management
@@ -112,8 +112,8 @@ if (!messageValidation.valid) {
 
 ### AI Integration
 
-**OpenRouter Configuration**:
-- Model: `anthropic/claude-haiku-4.5` (defined in `src/lib/openrouter.ts`)
+**Vercel AI Gateway Configuration**:
+- Model: `anthropic/claude-haiku-4.5` (defined in `src/lib/ai-gateway.ts`)
 - Uses extended reasoning API for analysis (4000 reasoning tokens)
 - Constants in `src/lib/constants.ts`: `REASONING_TOKENS`, `GUIDANCE_MAX_TOKENS`
 
@@ -207,7 +207,7 @@ Required in `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-OPENROUTER_API_KEY=
+AI_GATEWAY_API_KEY=
 ```
 
 ## Common Patterns
