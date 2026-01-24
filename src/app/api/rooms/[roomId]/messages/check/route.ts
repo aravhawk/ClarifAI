@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { createOpenRouterClient, AI_MODEL } from '@/lib/openrouter'
+import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
 import { TONE_CHECK_SYSTEM_PROMPT, buildToneCheckPrompt, shouldBlockMessage } from '@/lib/prompts'
 import type { ToneCheckResult } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
@@ -88,8 +88,8 @@ export async function POST(
       : undefined
 
     // Call AI for tone analysis
-    const openrouter = createOpenRouterClient()
-    const response = await openrouter.chat.completions.create({
+    const gateway = createAiGatewayClient()
+    const response = await gateway.chat.completions.create({
       model: AI_MODEL,
       messages: [
         { role: 'system', content: TONE_CHECK_SYSTEM_PROMPT },

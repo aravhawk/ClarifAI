@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { createOpenRouterClient, AI_MODEL } from '@/lib/openrouter'
+import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
 import { COACH_SYSTEM_PROMPT, buildCoachPrompt } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
 
@@ -23,7 +23,7 @@ export async function POST(
     if (authResult instanceof NextResponse) return authResult
     const { user, member, adminClient } = authResult
 
-    const openrouter = createOpenRouterClient()
+    const gateway = createAiGatewayClient()
 
     // Log coach usage event
     await adminClient.from('room_events').insert({
@@ -32,8 +32,8 @@ export async function POST(
       type: 'coach_used',
     })
 
-    // Stream response from OpenRouter
-    const response = await openrouter.chat.completions.create({
+    // Stream response from Vercel AI Gateway
+    const response = await gateway.chat.completions.create({
       model: AI_MODEL,
       messages: [
         { role: 'system', content: COACH_SYSTEM_PROMPT },

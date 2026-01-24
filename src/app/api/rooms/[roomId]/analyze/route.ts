@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
-import { createOpenRouterClient, AI_MODEL, REASONING_TOKENS, MAX_TOKENS } from '@/lib/openrouter'
+import { createAiGatewayClient, AI_MODEL, REASONING_TOKENS, MAX_TOKENS } from '@/lib/ai-gateway'
 import { ANALYSIS_SYSTEM_PROMPT, buildAnalysisPrompt, detectSafetyLevel, validateAnalysis } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
-import type { OpenRouterChatCompletionCreateParams } from '@/lib/openrouter.types'
+import type { AiGatewayChatCompletionCreateParams } from '@/lib/ai-gateway.types'
 
 export async function POST(
   request: NextRequest,
@@ -16,7 +16,7 @@ export async function POST(
     if (authResult instanceof NextResponse) return authResult
     const { user, member, adminClient } = authResult
 
-    const openrouter = createOpenRouterClient()
+    const gateway = createAiGatewayClient()
 
     // Check if analysis already exists
     const { data: existingAnalysis } = await adminClient
@@ -103,8 +103,8 @@ export async function POST(
       })
     }
 
-    // Call OpenRouter with extended thinking
-    const completionParams: OpenRouterChatCompletionCreateParams = {
+    // Call Vercel AI Gateway with extended reasoning token budget
+    const completionParams: AiGatewayChatCompletionCreateParams = {
       model: AI_MODEL,
       messages: [
         { role: 'system', content: ANALYSIS_SYSTEM_PROMPT },
@@ -115,8 +115,7 @@ export async function POST(
         max_tokens: REASONING_TOKENS,
       },
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await openrouter.chat.completions.create(completionParams as any)
+    const response = await gateway.chat.completions.create(completionParams)
 
     const content = response.choices[0]?.message?.content
     if (!content) {
