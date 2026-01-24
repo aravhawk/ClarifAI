@@ -103,7 +103,7 @@ export async function POST(
       })
     }
 
-    // Call Vercel AI Gateway with extended thinking
+    // Call Vercel AI Gateway with extended reasoning token budget
     const completionParams: AiGatewayChatCompletionCreateParams = {
       model: AI_MODEL,
       messages: [
@@ -115,8 +115,7 @@ export async function POST(
         max_tokens: REASONING_TOKENS,
       },
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const response = await gateway.chat.completions.create(completionParams as any)
+    const response = await gateway.chat.completions.create(completionParams)
 
     const content = response.choices[0]?.message?.content
     if (!content) {
