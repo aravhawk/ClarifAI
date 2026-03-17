@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { requireRoomMember } from '@/lib/api/auth'
 
 export async function POST(
@@ -11,89 +11,62 @@ export async function POST(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
     // Check if turn state already exists
-    const { data: existingTurn } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
-
-    if (existingTurn) {
-      return NextResponse.json({ turnState: existingTurn })
+    const existingTurn = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (existingTurn.exists) {
+      return NextResponse.json({ turnState: { id: 'main', ...existingTurn.data() } })
     }
 
     // Get analysis to determine who goes first (based on sentiment)
-    const { data: analysis } = await adminClient
-      .from('room_ai_analysis')
-      .select('analysis_json')
-      .eq('room_id', roomId)
-      .single()
-
-    if (!analysis) {
+    const analysisSnap = await adminDb.doc(`rooms/${roomId}/analysis/main`).get()
+    if (!analysisSnap.exists) {
       return NextResponse.json({ error: 'Analysis not found' }, { status: 400 })
     }
+    const analysis = analysisSnap.data()!
 
     // Get members in order
-    const { data: members } = await adminClient
-      .from('room_members')
-      .select('user_id')
-      .eq('room_id', roomId)
-      .order('joined_at', { ascending: true })
-
-    if (!members || members.length !== 2) {
+    const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).orderBy('joined_at', 'asc').get()
+    if (membersSnap.size !== 2) {
       return NextResponse.json({ error: 'Room must have 2 members' }, { status: 400 })
     }
 
-    const userAId = members[0].user_id
-    const userBId = members[1].user_id
+    const userAId = membersSnap.docs[0].id
+    const userBId = membersSnap.docs[1].id
 
-    // Determine who goes first based on sentiment
-    // The person with the lower (more negative) sentiment speaks first
-    // This gives them a chance to express themselves
     const sentimentA = analysis.analysis_json?.personA?.sentimentScore ?? 0
     const sentimentB = analysis.analysis_json?.personB?.sentimentScore ?? 0
-
     const firstSpeakerId = sentimentA <= sentimentB ? userAId : userBId
 
-    // Create turn state
-    const { data: turnState, error: turnError } = await adminClient
-      .from('room_turn_state')
-      .insert({
-        room_id: roomId,
-        current_user_id: firstSpeakerId,
-        ai_guidance: {
-          initialized: true,
-          firstSpeaker: firstSpeakerId === userAId ? 'A' : 'B',
-          reason: 'Based on initial sentiment analysis'
-        }
-      })
-      .select()
-      .single()
-
-    if (turnError) {
-      console.error('Turn state creation error:', turnError)
-      return NextResponse.json({ error: 'Failed to create turn state' }, { status: 500 })
+    const now = new Date().toISOString()
+    const turnStateData = {
+      current_user_id: firstSpeakerId,
+      ai_guidance: {
+        initialized: true,
+        firstSpeaker: firstSpeakerId === userAId ? 'A' : 'B',
+        reason: 'Based on initial sentiment analysis',
+      },
+      end_request_pending: false,
+      end_requested_by: null,
+      resolved_by_ai: false,
+      resolution_reason: null,
+      suggest_break: false,
+      break_message: null,
+      updated_at: now,
     }
 
-    // Update room status to in_progress
-    await adminClient
-      .from('rooms')
-      .update({ status: 'in_progress' })
-      .eq('id', roomId)
+    await adminDb.doc(`rooms/${roomId}/turnState/main`).set(turnStateData)
+    await adminDb.doc(`rooms/${roomId}`).update({ status: 'in_progress' })
 
-    // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
-        type: 'chat_started',
-        metadata: { firstSpeaker: firstSpeakerId }
-      })
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
+      type: 'chat_started',
+      metadata: { firstSpeaker: firstSpeakerId },
+      created_at: now,
+    })
 
-    return NextResponse.json({ turnState })
+    return NextResponse.json({ turnState: { id: 'main', ...turnStateData } })
   } catch (error) {
     console.error('Turn init error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -109,16 +82,11 @@ export async function GET(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
 
-    // Get turn state
-    const { data: turnState } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    const turnState = turnSnap.exists ? { id: 'main', ...turnSnap.data() } : null
 
-    return NextResponse.json({ turnState: turnState || null })
+    return NextResponse.json({ turnState })
   } catch (error) {
     console.error('Turn get error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

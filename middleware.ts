@@ -1,8 +1,10 @@
-import { type NextRequest } from 'next/server'
-import { updateSession } from '@/lib/supabase/middleware'
+import { type NextRequest, NextResponse } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  return await updateSession(request)
+// Middleware is intentionally lightweight: session verification happens in
+// individual API routes via requireAuth(). Anonymous sign-in is handled
+// client-side by useAuth. This avoids importing firebase-admin in the edge runtime.
+export function middleware(request: NextRequest) {
+  return NextResponse.next()
 }
 
 export const config = {

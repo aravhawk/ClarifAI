@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { requireRoomMember } from '@/lib/api/auth'
 
 export async function PUT(
@@ -12,54 +12,39 @@ export async function PUT(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
-    // Update entry
+    const now = new Date().toISOString()
     const updateData: Record<string, unknown> = {
       text: text || '',
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     }
 
     if (submit) {
-      updateData.submitted_at = new Date().toISOString()
+      updateData.submitted_at = now
     }
 
-    const { error: updateError } = await adminClient
-      .from('room_entries')
-      .update(updateData)
-      .eq('room_id', roomId)
-      .eq('user_id', user.id)
-
-    if (updateError) {
+    try {
+      await adminDb.doc(`rooms/${roomId}/entries/${uid}`).update(updateData)
+    } catch (updateError) {
       console.error('Update error:', updateError)
       return NextResponse.json({ error: 'Failed to update entry' }, { status: 500 })
     }
 
-    // If submitting, check if both have now submitted
     if (submit) {
-      // Log event
-      await adminClient
-        .from('room_events')
-        .insert({
-          room_id: roomId,
-          user_id: user.id,
-          type: 'submitted',
-        })
+      await adminDb.collection(`rooms/${roomId}/events`).add({
+        user_id: uid,
+        type: 'submitted',
+        metadata: {},
+        created_at: now,
+      })
 
       // Check if both submitted
-      const { data: allEntries } = await adminClient
-        .from('room_entries')
-        .select('submitted_at')
-        .eq('room_id', roomId)
-
-      const bothSubmitted = allEntries?.every(e => e.submitted_at)
+      const entriesSnap = await adminDb.collection(`rooms/${roomId}/entries`).get()
+      const bothSubmitted = entriesSnap.docs.length === 2 && entriesSnap.docs.every(d => d.data().submitted_at)
 
       if (bothSubmitted) {
-        // Update room status to ready
-        await adminClient
-          .from('rooms')
-          .update({ status: 'ready' })
-          .eq('id', roomId)
+        await adminDb.doc(`rooms/${roomId}`).update({ status: 'ready' })
       }
     }
 

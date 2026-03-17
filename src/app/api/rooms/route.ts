@@ -1,20 +1,14 @@
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
+import { requireAuth } from '@/lib/api/auth'
 import { generateRoomCode } from '@/lib/utils/room'
+import { FieldValue } from 'firebase-admin/firestore'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    // Get current user (fallback to anonymous)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
-      if (anonError || !anonData?.user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-      user = anonData.user
-    }
+    const authResult = await requireAuth()
+    if (authResult instanceof NextResponse) return authResult
+    const { uid } = authResult
 
     const { relationship, displayName } = await request.json()
 
@@ -29,17 +23,10 @@ export async function POST(request: Request) {
     // Generate unique room code
     let code = generateRoomCode()
     let attempts = 0
-    const adminClient = await createAdminClient()
-    
-    // Ensure code is unique
+
     while (attempts < 10) {
-      const { data: existing } = await adminClient
-        .from('rooms')
-        .select('id')
-        .eq('code', code)
-        .single()
-      
-      if (!existing) break
+      const existing = await adminDb.collection('rooms').where('code', '==', code).limit(1).get()
+      if (existing.empty) break
       code = generateRoomCode()
       attempts++
     }
@@ -48,58 +35,53 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to generate unique code' }, { status: 500 })
     }
 
-    // Create room
-    const { data: room, error: roomError } = await adminClient
-      .from('rooms')
-      .insert({ code })
-      .select()
-      .single()
+    const now = new Date().toISOString()
 
-    if (roomError) {
-      console.error('Room creation error:', roomError)
-      return NextResponse.json({ error: 'Failed to create room' }, { status: 500 })
-    }
+    // Create room
+    const roomRef = await adminDb.collection('rooms').add({
+      code,
+      status: 'waiting',
+      created_at: now,
+      completed_at: null,
+      delete_at: null,
+      consent_version: '1.0',
+    })
+
+    const roomId = roomRef.id
 
     // Add creator as first member
-    const { error: memberError } = await adminClient
-      .from('room_members')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
+    try {
+      await adminDb.doc(`rooms/${roomId}/members/${uid}`).set({
+        joined_at: now,
+        consented_at: now,
         relationship_to_other: relationship,
         display_name: displayName.trim(),
       })
-
-    if (memberError) {
+    } catch (memberError) {
       console.error('Member creation error:', memberError)
-      // Clean up room
-      await adminClient.from('rooms').delete().eq('id', room.id)
+      await roomRef.delete()
       return NextResponse.json({ error: 'Failed to join room' }, { status: 500 })
     }
 
-
     // Create empty entry for creator
-    await adminClient
-      .from('room_entries')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
-        text: '',
-      })
+    await adminDb.doc(`rooms/${roomId}/entries/${uid}`).set({
+      text: '',
+      updated_at: now,
+      submitted_at: null,
+    })
 
     // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
-        type: 'created',
-      })
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
+      type: 'created',
+      metadata: {},
+      created_at: now,
+    })
 
-    return NextResponse.json({ 
-      roomId: room.id, 
-      code: room.code,
-      shareUrl: `${process.env.NEXT_PUBLIC_APP_URL}/r/${room.code}`
+    return NextResponse.json({
+      roomId,
+      code,
+      shareUrl: `${process.env.NEXT_PUBLIC_APP_URL}/r/${code}`,
     })
   } catch (error) {
     console.error('Create room error:', error)

@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
 import { TONE_CHECK_SYSTEM_PROMPT, buildToneCheckPrompt, shouldBlockMessage } from '@/lib/prompts'
 import type { ToneCheckResult } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
 import { validateMessage, validateToneLabels } from '@/lib/api/validation'
+
+const FAIL_CLOSED: ToneCheckResult = {
+  decision: 'warn',
+  toneSummary: 'Tone analysis unavailable. Please review your message carefully before sending.',
+  suggestedLabels: [],
+  warning: 'Our tone analysis system is temporarily unavailable. Please ensure your message is respectful and constructive.',
+}
 
 export async function POST(
   request: NextRequest,
@@ -26,41 +33,28 @@ export async function POST(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
     // Check turn state - must be user's turn
-    const { data: turnState } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
-
-    if (!turnState) {
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (!turnSnap.exists) {
       return NextResponse.json({ error: 'Chat not started' }, { status: 400 })
     }
+    const turnState = turnSnap.data()!
 
-    if (turnState.current_user_id !== user.id) {
+    if (turnState.current_user_id !== uid) {
       return NextResponse.json({ error: 'Not your turn' }, { status: 403 })
     }
 
     // Check for active pause
-    const { data: activePause } = await adminClient
-      .from('room_pauses')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('status', 'active')
-      .single()
-
-    if (activePause) {
+    const activePauseSnap = await adminDb.collection(`rooms/${roomId}/pauses`).where('status', '==', 'active').limit(1).get()
+    if (!activePauseSnap.empty) {
+      const activePause = activePauseSnap.docs[0].data()
       const resumeAt = new Date(activePause.resume_at)
       if (resumeAt > new Date()) {
         return NextResponse.json({ error: 'Chat is paused', resumeAt: activePause.resume_at }, { status: 403 })
       }
-      // Pause has expired, mark as completed
-      await adminClient
-        .from('room_pauses')
-        .update({ status: 'completed' })
-        .eq('id', activePause.id)
+      await activePauseSnap.docs[0].ref.update({ status: 'completed' })
     }
 
     // Fast pre-check for highly abusive content
@@ -71,20 +65,16 @@ export async function POST(
           toneSummary: 'This message contains language that cannot be sent.',
           suggestedLabels: toneLabels,
           warning: 'Messages containing threats of violence or highly abusive language cannot be sent. Please rephrase your message.',
-        } as ToneCheckResult
+        } as ToneCheckResult,
       })
     }
 
     // Get recent messages for context
-    const { data: recentMessages } = await adminClient
-      .from('room_messages')
-      .select('text, user_id')
-      .eq('room_id', roomId)
-      .order('created_at', { ascending: false })
-      .limit(5)
-
-    const conversationContext = recentMessages && recentMessages.length > 0
-      ? recentMessages.reverse().map(m => `- "${m.text}"`).join('\n')
+    const recentSnap = await adminDb.collection(`rooms/${roomId}/messages`)
+      .orderBy('created_at', 'desc').limit(5).get()
+    const recentMessages = recentSnap.docs.map(d => d.data()).reverse()
+    const conversationContext = recentMessages.length > 0
+      ? recentMessages.map((m: any) => `- "${m.text}"`).join('\n')
       : undefined
 
     // Call AI for tone analysis
@@ -100,15 +90,7 @@ export async function POST(
 
     const content = response.choices[0]?.message?.content
     if (!content) {
-      // Fail closed - warn if AI fails
-      return NextResponse.json({
-        result: {
-          decision: 'warn',
-          toneSummary: 'Tone analysis unavailable. Please review your message carefully before sending.',
-          suggestedLabels: toneLabels,
-          warning: 'Our tone analysis system is temporarily unavailable. Please ensure your message is respectful and constructive.',
-        } as ToneCheckResult
-      })
+      return NextResponse.json({ result: { ...FAIL_CLOSED, suggestedLabels: toneLabels } })
     }
 
     let result: ToneCheckResult
@@ -116,15 +98,7 @@ export async function POST(
       const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim()
       result = JSON.parse(cleanedContent)
     } catch {
-      // Fail closed on parse error
-      return NextResponse.json({
-        result: {
-          decision: 'warn',
-          toneSummary: 'Tone analysis unavailable. Please review your message carefully before sending.',
-          suggestedLabels: toneLabels,
-          warning: 'Our tone analysis system is temporarily unavailable. Please ensure your message is respectful and constructive.',
-        } as ToneCheckResult
-      })
+      return NextResponse.json({ result: { ...FAIL_CLOSED, suggestedLabels: toneLabels } })
     }
 
     return NextResponse.json({ result })

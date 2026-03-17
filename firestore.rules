@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: is the caller a member of this room?
+    function isRoomMember(roomId) {
+      return exists(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+    }
+
+    match /rooms/{roomId} {
+      allow read: if isRoomMember(roomId);
+      allow write: if false; // All writes via API routes (Admin SDK bypasses rules)
+
+      match /members/{userId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /entries/{userId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /analysis/{doc} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /messages/{messageId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /turnState/{doc} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /pauses/{pauseId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+      match /events/{eventId} {
+        allow read: if isRoomMember(roomId);
+        allow write: if false;
+      }
+    }
+
+    // Research aggregate — server-only, no client access
+    match /researchAggregate/{docId} {
+      allow read, write: if false;
+    }
+  }
+}

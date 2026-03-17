@@ -1,41 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { onSnapshot, collection, query, orderBy } from 'firebase/firestore'
+import { db } from '@/lib/firebase/client'
 import type { RoomMessage, ToneCheckResponse } from '@/types/room'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 export function useMessages(roomId: string) {
   const [messages, setMessages] = useState<RoomMessage[]>([])
-  const supabase = createClient()
 
-  // Fetch initial messages
-  const fetchMessages = useCallback(async () => {
-    const { data } = await supabase
-      .from('room_messages')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('created_at', { ascending: true })
-    setMessages(data || [])
-  }, [roomId, supabase])
-
-  // Set up realtime subscription for new messages
   useEffect(() => {
-    fetchMessages()
-
-    const channel: RealtimeChannel = supabase
-      .channel(`messages:${roomId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'room_messages', filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          setMessages(prev => [...prev, payload.new as RoomMessage])
-        }
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [roomId, fetchMessages, supabase])
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'rooms', roomId, 'messages'), orderBy('created_at', 'asc')),
+      (snap) => {
+        setMessages(snap.docs.map(d => ({ id: d.id, room_id: roomId, ...d.data() } as RoomMessage)))
+      }
+    )
+    return unsubscribe
+  }, [roomId])
 
   const sendMessage = useCallback(async (text: string, toneLabels: string[]) => {
     const res = await fetch(`/api/rooms/${roomId}/messages`, {
@@ -66,9 +45,5 @@ export function useMessages(roomId: string) {
     return data.result
   }, [roomId])
 
-  return {
-    messages,
-    sendMessage,
-    checkTone,
-  }
+  return { messages, sendMessage, checkTone }
 }

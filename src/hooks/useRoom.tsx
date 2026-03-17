@@ -1,9 +1,10 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { onSnapshot, doc, collection, query, orderBy } from 'firebase/firestore'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth, db } from '@/lib/firebase/client'
 import type { Room, RoomMember, RoomEntry, RoomAIAnalysis, RoomContext } from '@/types/room'
-import type { RealtimeChannel } from '@supabase/supabase-js'
 
 const RoomCtx = createContext<RoomContext | null>(null)
 
@@ -21,124 +22,81 @@ export function RoomProvider({ children, roomId }: RoomProviderProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const supabase = createClient()
-
-  // Fetch initial data
-  const fetchData = useCallback(async () => {
-    try {
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
+  // Track auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setCurrentUserId(user.uid)
+      } else {
         setError('Not authenticated')
         setLoading(false)
-        return
       }
-      setCurrentUserId(user.id)
+    })
+    return unsub
+  }, [])
 
-      // Fetch room
-      const { data: roomData, error: roomError } = await supabase
-        .from('rooms')
-        .select('*')
-        .eq('id', roomId)
-        .single()
+  // Set up Firestore onSnapshot subscriptions once we have a user
+  useEffect(() => {
+    if (!currentUserId) return
 
-      if (roomError) {
+    const unsubscribers: (() => void)[] = []
+
+    // Room document
+    const unsubRoom = onSnapshot(
+      doc(db, 'rooms', roomId),
+      (snap) => {
+        if (!snap.exists()) {
+          setError('Room not found or access denied')
+          setLoading(false)
+          return
+        }
+        setRoom({ id: snap.id, ...snap.data() } as Room)
+        setLoading(false)
+      },
+      () => {
         setError('Room not found or access denied')
         setLoading(false)
-        return
       }
-      setRoom(roomData)
+    )
+    unsubscribers.push(unsubRoom)
 
-      // Fetch members
-      const { data: membersData } = await supabase
-        .from('room_members')
-        .select('*')
-        .eq('room_id', roomId)
-      setMembers(membersData || [])
-
-      // Fetch entries
-      const { data: entriesData } = await supabase
-        .from('room_entries')
-        .select('*')
-        .eq('room_id', roomId)
-      setEntries(entriesData || [])
-
-      // Fetch analysis if exists
-      const { data: analysisData } = await supabase
-        .from('room_ai_analysis')
-        .select('*')
-        .eq('room_id', roomId)
-        .maybeSingle()
-      setAnalysis(analysisData || null)
-
-      setLoading(false)
-    } catch (err) {
-      setError('Failed to load room data')
-      setLoading(false)
-      console.error(err)
-    }
-  }, [roomId, supabase])
-
-  // Set up realtime subscriptions
-  useEffect(() => {
-    fetchData()
-
-    let channel: RealtimeChannel
-
-    const setupRealtime = async () => {
-      channel = supabase
-        .channel(`room:${roomId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
-          (payload) => {
-            if (payload.eventType === 'UPDATE') {
-              setRoom(payload.new as Room)
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` },
-          (payload) => {
-            setMembers(prev => [...prev, payload.new as RoomMember])
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'room_entries', filter: `room_id=eq.${roomId}` },
-          (payload) => {
-            if (payload.eventType === 'INSERT') {
-              setEntries(prev => [...prev, payload.new as RoomEntry])
-            } else if (payload.eventType === 'UPDATE') {
-              setEntries(prev => prev.map(e => 
-                e.user_id === (payload.new as RoomEntry).user_id ? payload.new as RoomEntry : e
-              ))
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'room_ai_analysis', filter: `room_id=eq.${roomId}` },
-          (payload) => {
-            setAnalysis(payload.new as RoomAIAnalysis)
-          }
-        )
-        .subscribe()
-    }
-
-    setupRealtime()
-
-    return () => {
-      if (channel) {
-        supabase.removeChannel(channel)
+    // Members subcollection
+    const unsubMembers = onSnapshot(
+      query(collection(db, 'rooms', roomId, 'members'), orderBy('joined_at', 'asc')),
+      (snap) => {
+        setMembers(snap.docs.map(d => ({ room_id: roomId, user_id: d.id, ...d.data() } as RoomMember)))
       }
-    }
-  }, [roomId, fetchData, supabase])
+    )
+    unsubscribers.push(unsubMembers)
+
+    // Entries subcollection
+    const unsubEntries = onSnapshot(
+      collection(db, 'rooms', roomId, 'entries'),
+      (snap) => {
+        setEntries(snap.docs.map(d => ({ room_id: roomId, user_id: d.id, ...d.data() } as RoomEntry)))
+      }
+    )
+    unsubscribers.push(unsubEntries)
+
+    // Analysis singleton doc
+    const unsubAnalysis = onSnapshot(
+      doc(db, 'rooms', roomId, 'analysis', 'main'),
+      (snap) => {
+        if (snap.exists()) {
+          setAnalysis({ room_id: roomId, ...snap.data() } as RoomAIAnalysis)
+        } else {
+          setAnalysis(null)
+        }
+      }
+    )
+    unsubscribers.push(unsubAnalysis)
+
+    return () => unsubscribers.forEach(u => u())
+  }, [roomId, currentUserId])
 
   const refreshRoom = useCallback(async () => {
-    await fetchData()
-  }, [fetchData])
+    // onSnapshot keeps data live; this is a no-op kept for API compatibility
+  }, [])
 
   // Derived state
   const partnerId = members.find(m => m.user_id !== currentUserId)?.user_id || null

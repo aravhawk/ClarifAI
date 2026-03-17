@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { PAUSE_DURATION_MS, MAX_PAUSES_PER_USER } from '@/lib/constants'
 import { requireRoomMember } from '@/lib/api/auth'
 
@@ -12,43 +12,27 @@ export async function POST(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
     // Check turn state - must be user's turn to pause
-    const { data: turnState } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
-
-    if (!turnState) {
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (!turnSnap.exists) {
       return NextResponse.json({ error: 'Chat not started' }, { status: 400 })
     }
 
-    if (turnState.current_user_id !== user.id) {
+    if (turnSnap.data()!.current_user_id !== uid) {
       return NextResponse.json({ error: 'You can only pause on your turn' }, { status: 403 })
     }
 
     // Check for active pause
-    const { data: activePause } = await adminClient
-      .from('room_pauses')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('status', 'active')
-      .single()
-
-    if (activePause) {
+    const activePauseSnap = await adminDb.collection(`rooms/${roomId}/pauses`).where('status', '==', 'active').limit(1).get()
+    if (!activePauseSnap.empty) {
       return NextResponse.json({ error: 'Already paused' }, { status: 400 })
     }
 
     // Count user's pauses
-    const { data: userPauses } = await adminClient
-      .from('room_pauses')
-      .select('id')
-      .eq('room_id', roomId)
-      .eq('initiated_by', user.id)
-
-    const pauseCount = userPauses?.length || 0
+    const userPausesSnap = await adminDb.collection(`rooms/${roomId}/pauses`).where('initiated_by', '==', uid).get()
+    const pauseCount = userPausesSnap.size
 
     if (pauseCount >= MAX_PAUSES_PER_USER) {
       return NextResponse.json({ error: 'No pauses remaining' }, { status: 400 })
@@ -56,38 +40,31 @@ export async function POST(
 
     const pausedAt = new Date()
     const resumeAt = new Date(pausedAt.getTime() + PAUSE_DURATION_MS)
+    const now = pausedAt.toISOString()
 
-    // Create pause
-    const { data: pause, error: pauseError } = await adminClient
-      .from('room_pauses')
-      .insert({
-        room_id: roomId,
-        initiated_by: user.id,
+    let pauseRef
+    try {
+      pauseRef = await adminDb.collection(`rooms/${roomId}/pauses`).add({
+        initiated_by: uid,
         pause_index: pauseCount + 1,
-        paused_at: pausedAt.toISOString(),
+        paused_at: now,
         resume_at: resumeAt.toISOString(),
         status: 'active',
       })
-      .select()
-      .single()
-
-    if (pauseError) {
+    } catch (pauseError) {
       console.error('Pause creation error:', pauseError)
       return NextResponse.json({ error: 'Failed to create pause' }, { status: 500 })
     }
 
-    // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
-        type: 'paused',
-        metadata: { pauseIndex: pauseCount + 1, resumeAt: resumeAt.toISOString() },
-      })
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
+      type: 'paused',
+      metadata: { pauseIndex: pauseCount + 1, resumeAt: resumeAt.toISOString() },
+      created_at: now,
+    })
 
-    return NextResponse.json({ 
-      pause,
+    return NextResponse.json({
+      pause: { id: pauseRef.id, initiated_by: uid, pause_index: pauseCount + 1, paused_at: now, resume_at: resumeAt.toISOString(), status: 'active' },
       remainingPauses: MAX_PAUSES_PER_USER - (pauseCount + 1),
     })
   } catch (error) {
@@ -105,46 +82,31 @@ export async function GET(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
 
     // Get active pause
-    const { data: activePause } = await adminClient
-      .from('room_pauses')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('status', 'active')
-      .single()
+    const activePauseSnap = await adminDb.collection(`rooms/${roomId}/pauses`).where('status', '==', 'active').limit(1).get()
 
-    // Check if pause has expired
-    if (activePause) {
-      const resumeAt = new Date(activePause.resume_at)
+    let activePause = null
+    if (!activePauseSnap.empty) {
+      const doc = activePauseSnap.docs[0]
+      const data = doc.data()
+      const resumeAt = new Date(data.resume_at)
       if (resumeAt <= new Date()) {
-        // Mark as completed
-        await adminClient
-          .from('room_pauses')
-          .update({ status: 'completed' })
-          .eq('id', activePause.id)
-        
-        return NextResponse.json({ activePause: null })
+        await doc.ref.update({ status: 'completed' })
+      } else {
+        activePause = { id: doc.id, ...data }
       }
     }
 
     // Get pause counts per user
-    const { data: allPauses } = await adminClient
-      .from('room_pauses')
-      .select('initiated_by')
-      .eq('room_id', roomId)
-
+    const allPausesSnap = await adminDb.collection(`rooms/${roomId}/pauses`).get()
     const pauseCounts: Record<string, number> = {}
-    for (const p of allPauses || []) {
-      pauseCounts[p.initiated_by] = (pauseCounts[p.initiated_by] || 0) + 1
+    for (const d of allPausesSnap.docs) {
+      const initiated_by = d.data().initiated_by
+      pauseCounts[initiated_by] = (pauseCounts[initiated_by] || 0) + 1
     }
 
-    return NextResponse.json({ 
-      activePause: activePause || null,
-      pauseCounts,
-      maxPauses: MAX_PAUSES_PER_USER,
-    })
+    return NextResponse.json({ activePause, pauseCounts, maxPauses: MAX_PAUSES_PER_USER })
   } catch (error) {
     console.error('Get pause error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -160,34 +122,21 @@ export async function DELETE(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
-    // Get active pause
-    const { data: activePause } = await adminClient
-      .from('room_pauses')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('status', 'active')
-      .single()
-
-    if (!activePause) {
+    const activePauseSnap = await adminDb.collection(`rooms/${roomId}/pauses`).where('status', '==', 'active').limit(1).get()
+    if (activePauseSnap.empty) {
       return NextResponse.json({ error: 'No active pause' }, { status: 400 })
     }
 
-    // End pause early
-    await adminClient
-      .from('room_pauses')
-      .update({ status: 'completed' })
-      .eq('id', activePause.id)
+    await activePauseSnap.docs[0].ref.update({ status: 'completed' })
 
-    // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
-        type: 'pause_ended_early',
-      })
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
+      type: 'pause_ended_early',
+      metadata: {},
+      created_at: new Date().toISOString(),
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

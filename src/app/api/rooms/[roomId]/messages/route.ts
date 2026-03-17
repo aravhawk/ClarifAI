@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
 import { LIVE_GUIDANCE_SYSTEM_PROMPT, buildLiveGuidancePrompt, shouldBlockMessage, type PersonInfo } from '@/lib/prompts'
 import type { LiveGuidanceResult } from '@/lib/prompts'
@@ -27,40 +27,28 @@ export async function POST(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
     // Check turn state
-    const { data: turnState } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
-
-    if (!turnState) {
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (!turnSnap.exists) {
       return NextResponse.json({ error: 'Chat not started' }, { status: 400 })
     }
+    const turnState = turnSnap.data()!
 
-    if (turnState.current_user_id !== user.id) {
+    if (turnState.current_user_id !== uid) {
       return NextResponse.json({ error: 'Not your turn' }, { status: 403 })
     }
 
     // Check for active pause
-    const { data: activePause } = await adminClient
-      .from('room_pauses')
-      .select('*')
-      .eq('room_id', roomId)
-      .eq('status', 'active')
-      .single()
-
-    if (activePause) {
+    const activePauseSnap = await adminDb.collection(`rooms/${roomId}/pauses`).where('status', '==', 'active').limit(1).get()
+    if (!activePauseSnap.empty) {
+      const activePause = activePauseSnap.docs[0].data()
       const resumeAt = new Date(activePause.resume_at)
       if (resumeAt > new Date()) {
         return NextResponse.json({ error: 'Chat is paused' }, { status: 403 })
       }
-      await adminClient
-        .from('room_pauses')
-        .update({ status: 'completed' })
-        .eq('id', activePause.id)
+      await activePauseSnap.docs[0].ref.update({ status: 'completed' })
     }
 
     // Final safety check
@@ -68,65 +56,53 @@ export async function POST(
       return NextResponse.json({ error: 'Message blocked for safety' }, { status: 400 })
     }
 
-    // Get members to determine A/B (with names and relationships)
-    const { data: members } = await adminClient
-      .from('room_members')
-      .select('user_id, display_name, relationship_to_other')
-      .eq('room_id', roomId)
-      .order('joined_at', { ascending: true })
+    // Get members ordered by joined_at
+    const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).orderBy('joined_at', 'asc').get()
+    const memberDocs = membersSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as any[]
 
-    const userAId = members?.[0]?.user_id
-    const userBId = members?.[1]?.user_id
-    const currentSpeaker = user.id === userAId ? 'A' : 'B'
-    const nextUserId = user.id === userAId ? userBId : userAId
+    const userAId = memberDocs[0]?.user_id
+    const userBId = memberDocs[1]?.user_id
+    const currentSpeaker = uid === userAId ? 'A' : 'B'
+    const nextUserId = uid === userAId ? userBId : userAId
 
-    // Build person info for AI prompts
-    const personA: PersonInfo | undefined = members?.[0] ? {
-      name: members[0].display_name || 'Person A',
-      relationship: members[0].relationship_to_other,
+    const personA: PersonInfo | undefined = memberDocs[0] ? {
+      name: memberDocs[0].display_name || 'Person A',
+      relationship: memberDocs[0].relationship_to_other,
     } : undefined
-    const personB: PersonInfo | undefined = members?.[1] ? {
-      name: members[1].display_name || 'Person B',
-      relationship: members[1].relationship_to_other,
+    const personB: PersonInfo | undefined = memberDocs[1] ? {
+      name: memberDocs[1].display_name || 'Person B',
+      relationship: memberDocs[1].relationship_to_other,
     } : undefined
+
+    const now = new Date().toISOString()
 
     // Insert message
-    const { data: newMessage, error: msgError } = await adminClient
-      .from('room_messages')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
+    let newMessageRef
+    try {
+      newMessageRef = await adminDb.collection(`rooms/${roomId}/messages`).add({
+        user_id: uid,
         text: message,
         tone_labels: toneLabels,
         tone_analysis: toneAnalysis || {},
         blocked: false,
+        created_at: now,
       })
-      .select()
-      .single()
-
-    if (msgError) {
+    } catch (msgError) {
       console.error('Message insert error:', msgError)
       return NextResponse.json({ error: 'Failed to send message' }, { status: 500 })
     }
 
     // Get all messages for guidance
-    const { data: allMessages } = await adminClient
-      .from('room_messages')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('created_at', { ascending: true })
+    const allMessagesSnap = await adminDb.collection(`rooms/${roomId}/messages`).orderBy('created_at', 'asc').get()
+    const allMessages = allMessagesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
 
     // Get analysis for context
-    const { data: analysis } = await adminClient
-      .from('room_ai_analysis')
-      .select('analysis_json')
-      .eq('room_id', roomId)
-      .single()
+    const analysisSnap = await adminDb.doc(`rooms/${roomId}/analysis/main`).get()
+    const contextSummary = analysisSnap.exists
+      ? (analysisSnap.data()!.analysis_json?.neutralAgenda || 'A conflict resolution conversation')
+      : 'A conflict resolution conversation'
 
-    const contextSummary = analysis?.analysis_json?.neutralAgenda || 'A conflict resolution conversation'
-
-    // Build message history for AI
-    const messageHistory = (allMessages || []).map(m => ({
+    const messageHistory = allMessages.map(m => ({
       speaker: (m.user_id === userAId ? 'A' : 'B') as 'A' | 'B',
       text: m.text,
       toneLabels: m.tone_labels || [],
@@ -144,7 +120,6 @@ export async function POST(
         ],
         max_tokens: GUIDANCE_MAX_TOKENS,
       })
-
       const content = response.choices[0]?.message?.content
       if (content) {
         const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim()
@@ -152,16 +127,14 @@ export async function POST(
       }
     } catch (err) {
       console.error('Guidance AI error:', err)
-      // Continue without guidance
     }
 
     // Update turn state
     const updateData: Record<string, unknown> = {
       current_user_id: nextUserId,
-      last_turn_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      last_turn_at: now,
+      updated_at: now,
     }
-
     if (guidance) {
       updateData.ai_guidance = guidance
       updateData.resolved_by_ai = guidance.resolved
@@ -170,23 +143,17 @@ export async function POST(
       updateData.break_message = guidance.breakMessage || null
     }
 
-    await adminClient
-      .from('room_turn_state')
-      .update(updateData)
-      .eq('room_id', roomId)
+    await adminDb.doc(`rooms/${roomId}/turnState/main`).update(updateData)
 
-    // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
-        type: 'message_sent',
-        metadata: { messageId: newMessage.id, toneLabels },
-      })
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
+      type: 'message_sent',
+      metadata: { messageId: newMessageRef.id, toneLabels },
+      created_at: now,
+    })
 
-    return NextResponse.json({ 
-      message: newMessage,
+    return NextResponse.json({
+      message: { id: newMessageRef.id, user_id: uid, text: message, tone_labels: toneLabels, tone_analysis: toneAnalysis || {}, blocked: false, created_at: now, room_id: roomId },
       guidance,
     })
   } catch (error) {
@@ -204,16 +171,11 @@ export async function GET(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
 
-    // Get all messages
-    const { data: messages } = await adminClient
-      .from('room_messages')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('created_at', { ascending: true })
+    const messagesSnap = await adminDb.collection(`rooms/${roomId}/messages`).orderBy('created_at', 'asc').get()
+    const messages = messagesSnap.docs.map(d => ({ id: d.id, room_id: roomId, ...d.data() }))
 
-    return NextResponse.json({ messages: messages || [] })
+    return NextResponse.json({ messages })
   } catch (error) {
     console.error('Get messages error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

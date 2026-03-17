@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { requireRoomMember } from '@/lib/api/auth'
 
 // POST - Request to end the session
@@ -12,54 +12,31 @@ export async function POST(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
-    // Get turn state
-    const { data: turnState, error: turnError } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
-
-    if (turnError || !turnState) {
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (!turnSnap.exists) {
       return NextResponse.json({ error: 'Chat not started' }, { status: 400 })
     }
+    const turnState = turnSnap.data()!
 
-    // Check if there's already a pending end request
     if (turnState.end_request_pending) {
       return NextResponse.json({ error: 'End request already pending' }, { status: 400 })
     }
 
-    // Update turn state with end request
-    const { data: updatedTurnState, error: updateError } = await adminClient
-      .from('room_turn_state')
-      .update({
-        end_requested_by: user.id,
-        end_request_pending: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('room_id', roomId)
-      .select()
-      .single()
+    const now = new Date().toISOString()
+    const updates = { end_requested_by: uid, end_request_pending: true, updated_at: now }
 
-    if (updateError) {
+    try {
+      await adminDb.doc(`rooms/${roomId}/turnState/main`).update(updates)
+    } catch (updateError) {
       console.error('End request error:', updateError)
       return NextResponse.json({ error: 'Failed to request end' }, { status: 500 })
     }
 
-    // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
-        type: 'end_requested',
-      })
+    await adminDb.collection(`rooms/${roomId}/events`).add({ user_id: uid, type: 'end_requested', metadata: {}, created_at: now })
 
-    return NextResponse.json({ 
-      turnState: updatedTurnState,
-      message: 'End request sent to partner',
-    })
+    return NextResponse.json({ turnState: { id: 'main', ...turnState, ...updates }, message: 'End request sent to partner' })
   } catch (error) {
     console.error('End request error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -73,7 +50,7 @@ export async function PUT(
 ) {
   try {
     const { roomId } = await params
-    const { action } = await request.json() // 'accept' or 'decline'
+    const { action } = await request.json()
 
     if (!['accept', 'decline'].includes(action)) {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
@@ -81,88 +58,36 @@ export async function PUT(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
-    // Get turn state
-    const { data: turnState, error: turnError } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
-
-    if (turnError || !turnState) {
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (!turnSnap.exists) {
       return NextResponse.json({ error: 'Chat not started' }, { status: 400 })
     }
+    const turnState = turnSnap.data()!
 
-    // Verify there's a pending request and user is not the requester
     if (!turnState.end_request_pending) {
       return NextResponse.json({ error: 'No pending end request' }, { status: 400 })
     }
 
-    if (turnState.end_requested_by === user.id) {
+    if (turnState.end_requested_by === uid) {
       return NextResponse.json({ error: 'Cannot respond to your own request' }, { status: 403 })
     }
 
+    const now = new Date().toISOString()
+
     if (action === 'accept') {
-      // Mark room as completed
-      await adminClient
-        .from('rooms')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', roomId)
+      await adminDb.doc(`rooms/${roomId}`).update({ status: 'completed', completed_at: now })
+      await adminDb.doc(`rooms/${roomId}/turnState/main`).update({ end_request_pending: false, end_requested_by: null, updated_at: now })
+      await adminDb.collection(`rooms/${roomId}/events`).add({ user_id: uid, type: 'end_accepted', metadata: {}, created_at: now })
 
-      // Update turn state
-      await adminClient
-        .from('room_turn_state')
-        .update({
-          end_request_pending: false,
-          end_requested_by: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('room_id', roomId)
-
-      // Log event
-      await adminClient
-        .from('room_events')
-        .insert({
-          room_id: roomId,
-          user_id: user.id,
-          type: 'end_accepted',
-        })
-
-      return NextResponse.json({ 
-        accepted: true,
-        message: 'Session ended by mutual agreement',
-      })
+      return NextResponse.json({ accepted: true, message: 'Session ended by mutual agreement' })
     } else {
-      // Decline - clear the request
-      const { data: updatedTurnState } = await adminClient
-        .from('room_turn_state')
-        .update({
-          end_requested_by: null,
-          end_request_pending: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('room_id', roomId)
-        .select()
-        .single()
+      const updates = { end_requested_by: null, end_request_pending: false, updated_at: now }
+      await adminDb.doc(`rooms/${roomId}/turnState/main`).update(updates)
+      await adminDb.collection(`rooms/${roomId}/events`).add({ user_id: uid, type: 'end_declined', metadata: {}, created_at: now })
 
-      // Log event
-      await adminClient
-        .from('room_events')
-        .insert({
-          room_id: roomId,
-          user_id: user.id,
-          type: 'end_declined',
-        })
-
-      return NextResponse.json({ 
-        accepted: false,
-        turnState: updatedTurnState,
-        message: 'End request declined',
-      })
+      return NextResponse.json({ accepted: false, turnState: { id: 'main', ...turnState, ...updates }, message: 'End request declined' })
     }
   } catch (error) {
     console.error('End response error:', error)
@@ -180,48 +105,28 @@ export async function DELETE(
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
-    // Get turn state
-    const { data: turnState } = await adminClient
-      .from('room_turn_state')
-      .select('*')
-      .eq('room_id', roomId)
-      .single()
+    const turnSnap = await adminDb.doc(`rooms/${roomId}/turnState/main`).get()
+    if (!turnSnap.exists) {
+      return NextResponse.json({ error: 'No pending end request' }, { status: 400 })
+    }
+    const turnState = turnSnap.data()!
 
-    if (!turnState || !turnState.end_request_pending) {
+    if (!turnState.end_request_pending) {
       return NextResponse.json({ error: 'No pending end request' }, { status: 400 })
     }
 
-    if (turnState.end_requested_by !== user.id) {
+    if (turnState.end_requested_by !== uid) {
       return NextResponse.json({ error: 'Can only cancel your own request' }, { status: 403 })
     }
 
-    // Clear the request
-    const { data: updatedTurnState } = await adminClient
-      .from('room_turn_state')
-      .update({
-        end_requested_by: null,
-        end_request_pending: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('room_id', roomId)
-      .select()
-      .single()
+    const now = new Date().toISOString()
+    const updates = { end_requested_by: null, end_request_pending: false, updated_at: now }
+    await adminDb.doc(`rooms/${roomId}/turnState/main`).update(updates)
+    await adminDb.collection(`rooms/${roomId}/events`).add({ user_id: uid, type: 'end_request_cancelled', metadata: {}, created_at: now })
 
-    // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: roomId,
-        user_id: user.id,
-        type: 'end_request_cancelled',
-      })
-
-    return NextResponse.json({ 
-      turnState: updatedTurnState,
-      message: 'End request cancelled',
-    })
+    return NextResponse.json({ turnState: { id: 'main', ...turnState, ...updates }, message: 'End request cancelled' })
   } catch (error) {
     console.error('Cancel end request error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

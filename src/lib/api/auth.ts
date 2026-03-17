@@ -1,49 +1,43 @@
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
-import type { User } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
+import { adminAuth, adminDb } from '@/lib/firebase/server'
 import type { RoomMember } from '@/types/room'
 
 export interface AuthResult {
-  user: User
-  supabase: Awaited<ReturnType<typeof createClient>>
+  uid: string
 }
 
 export interface RoomAuthResult extends AuthResult {
   member: RoomMember
-  adminClient: Awaited<ReturnType<typeof createAdminClient>>
 }
 
 export async function requireAuth(): Promise<AuthResult | NextResponse> {
-  const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const cookieStore = await cookies()
+  const sessionCookie = cookieStore.get('__session')?.value
 
-  if (authError || !user) {
+  if (!sessionCookie) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  return { user, supabase }
+  try {
+    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true)
+    return { uid: decoded.uid }
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 }
 
 export async function requireRoomMember(roomId: string): Promise<RoomAuthResult | NextResponse> {
   const authResult = await requireAuth()
+  if (authResult instanceof NextResponse) return authResult
 
-  if (authResult instanceof NextResponse) {
-    return authResult
-  }
+  const { uid } = authResult
 
-  const { user, supabase } = authResult
-  const adminClient = await createAdminClient()
-
-  const { data: member } = await adminClient
-    .from('room_members')
-    .select('*')
-    .eq('room_id', roomId)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!member) {
+  const memberSnap = await adminDb.doc(`rooms/${roomId}/members/${uid}`).get()
+  if (!memberSnap.exists) {
     return NextResponse.json({ error: 'Not a member of this room' }, { status: 403 })
   }
 
-  return { user, supabase, member, adminClient }
+  const member = { ...memberSnap.data(), room_id: roomId, user_id: uid } as RoomMember
+  return { uid, member }
 }

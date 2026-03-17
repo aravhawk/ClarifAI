@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
 import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
 import { COACH_SYSTEM_PROMPT, buildCoachPrompt } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
@@ -15,21 +15,22 @@ export async function POST(
     if (!statement) {
       return new Response(JSON.stringify({ error: 'Statement required' }), {
         status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
       })
     }
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
-    const { user, member, adminClient } = authResult
+    const { uid } = authResult
 
     const gateway = createAiGatewayClient()
 
     // Log coach usage event
-    await adminClient.from('room_events').insert({
-      room_id: roomId,
-      user_id: user.id,
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
       type: 'coach_used',
+      metadata: {},
+      created_at: new Date().toISOString(),
     })
 
     // Stream response from Vercel AI Gateway
@@ -43,7 +44,6 @@ export async function POST(
       stream: true,
     })
 
-    // Create a TransformStream to handle the streaming
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
@@ -70,9 +70,9 @@ export async function POST(
     })
   } catch (error) {
     console.error('Coach error:', error)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
     })
   }
 }

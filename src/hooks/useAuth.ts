@@ -1,36 +1,50 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import type { User } from '@supabase/supabase-js'
+import { useEffect, useState, useCallback } from 'react'
+import { onAuthStateChanged, signInAnonymously as firebaseSignInAnonymously, type User } from 'firebase/auth'
+import { auth } from '@/lib/firebase/client'
+
+async function syncSessionCookie(user: User) {
+  try {
+    const idToken = await user.getIdToken()
+    await fetch('/api/auth/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    })
+  } catch {
+    // Non-fatal: API routes will return 401 until cookie is set
+  }
+}
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      setLoading(false)
-    }
-
-    getUser()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser(firebaseUser)
+        await syncSessionCookie(firebaseUser)
+      } else {
+        // Auto sign in anonymously
+        try {
+          await firebaseSignInAnonymously(auth)
+          // onAuthStateChanged will fire again with the new user
+        } catch (err) {
+          console.error('Anonymous sign-in failed:', err)
+        }
+      }
       setLoading(false)
     })
 
-    return () => subscription.unsubscribe()
-  }, [supabase])
+    return unsubscribe
+  }, [])
 
-  const signInAnonymously = async () => {
-    const { data, error } = await supabase.auth.signInAnonymously()
-    if (error) throw error
-    return data
-  }
+  const signInAnonymously = useCallback(async () => {
+    const result = await firebaseSignInAnonymously(auth)
+    return result
+  }, [])
 
   return { user, loading, signInAnonymously }
 }

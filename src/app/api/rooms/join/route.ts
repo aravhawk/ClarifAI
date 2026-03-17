@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { adminDb } from '@/lib/firebase/server'
+import { requireAuth } from '@/lib/api/auth'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
     const { code, relationship, displayName } = await request.json()
 
     if (!code || typeof code !== 'string') {
@@ -18,102 +18,77 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Display name required' }, { status: 400 })
     }
 
-    // Get current user (fallback to anonymous)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
-      if (anonError || !anonData?.user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-      user = anonData.user
-    }
-
-    const adminClient = await createAdminClient()
+    const authResult = await requireAuth()
+    if (authResult instanceof NextResponse) return authResult
+    const { uid } = authResult
 
     // Find room by code
-    const { data: room, error: roomError } = await adminClient
-      .from('rooms')
-      .select('*')
-      .eq('code', code.toUpperCase())
-      .single()
+    const roomSnap = await adminDb.collection('rooms').where('code', '==', code.toUpperCase()).limit(1).get()
 
-    if (roomError || !room) {
-      // Generic error to prevent room enumeration
+    if (roomSnap.empty) {
       return NextResponse.json({ error: 'Unable to join room' }, { status: 404 })
     }
 
+    const roomDoc = roomSnap.docs[0]
+    const room = roomDoc.data()
+    const roomId = roomDoc.id
 
     // Check if room is flagged
     if (room.status === 'flagged') {
       return NextResponse.json({ error: 'This room is no longer available' }, { status: 403 })
     }
 
-    // Check current member count
-    const { data: members } = await adminClient
-      .from('room_members')
-      .select('user_id')
-      .eq('room_id', room.id)
-
-    const memberCount = members?.length || 0
-
     // Check if user is already a member
-    const isAlreadyMember = members?.some(m => m.user_id === user.id)
-    if (isAlreadyMember) {
-      return NextResponse.json({ 
-        roomId: room.id,
-        code: room.code,
-        alreadyMember: true
-      })
+    const myMemberSnap = await adminDb.doc(`rooms/${roomId}/members/${uid}`).get()
+    if (myMemberSnap.exists) {
+      return NextResponse.json({ roomId, code: room.code, alreadyMember: true })
     }
 
-    // Check if room is full
-    if (memberCount >= 2) {
+    // Check current member count
+    const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).get()
+    if (membersSnap.size >= 2) {
       return NextResponse.json({ error: 'Unable to join room' }, { status: 403 })
     }
 
+    const now = new Date().toISOString()
+
     // Add user as member
-    const { error: memberError } = await adminClient
-      .from('room_members')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
+    try {
+      await adminDb.doc(`rooms/${roomId}/members/${uid}`).set({
+        joined_at: now,
+        consented_at: now,
         relationship_to_other: relationship,
         display_name: displayName.trim(),
       })
-
-    if (memberError) {
+    } catch (memberError) {
       console.error('Join error:', memberError)
       return NextResponse.json({ error: 'Failed to join room' }, { status: 500 })
     }
 
     // Create empty entry for joiner
-    const { error: entryError } = await adminClient
-      .from('room_entries')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
+    try {
+      await adminDb.doc(`rooms/${roomId}/entries/${uid}`).set({
         text: '',
+        updated_at: now,
+        submitted_at: null,
       })
-
-    if (entryError) {
+    } catch (entryError) {
       console.error('Entry creation error:', entryError)
       return NextResponse.json({ error: 'Failed to create entry' }, { status: 500 })
     }
 
     // Log event
-    await adminClient
-      .from('room_events')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
-        type: 'joined',
-      })
-
-    return NextResponse.json({ 
-      roomId: room.id,
-      code: room.code,
-      alreadyMember: false
+    await adminDb.collection(`rooms/${roomId}/events`).add({
+      user_id: uid,
+      type: 'joined',
+      metadata: {},
+      created_at: now,
     })
+
+    // If this is the second member, update room status to ready-ish (still waiting for entries)
+    // Room stays 'waiting' until both submit entries
+
+    return NextResponse.json({ roomId, code: room.code, alreadyMember: false })
   } catch (error) {
     console.error('Join room error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
