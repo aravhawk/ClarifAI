@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Loader2, Copy, Check } from 'lucide-react'
 import { RelationshipSelector } from '@/components/forms/RelationshipSelector'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function CreatePage() {
   const router = useRouter()
@@ -22,6 +23,8 @@ export default function CreatePage() {
   const [copiedCode, setCopiedCode] = useState(false)
   const [copiedLink, setCopiedLink] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const { loading: authLoading } = useAuth()
 
   const resolvedRelationship = relationship === 'other' ? relationshipOther.trim() : relationship
 
@@ -144,7 +147,7 @@ export default function CreatePage() {
 
               <Button 
                 onClick={handleCreate}
-                disabled={!agreed || loading}
+                disabled={!agreed || loading || authLoading}
                 className="w-full h-12 bg-sage-500 hover:bg-sage-400 text-white"
               >
                 {loading ? (

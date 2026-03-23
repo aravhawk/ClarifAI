@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
+import { AuthProvider } from "@/components/AuthProvider"
 
 const inter = Inter({
   variable: "--font-inter",
@@ -35,7 +36,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   )

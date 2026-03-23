@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { RelationshipSelector } from '@/components/forms/RelationshipSelector'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function JoinPage() {
   const router = useRouter()
@@ -20,6 +21,8 @@ export default function JoinPage() {
   const [relationshipOther, setRelationshipOther] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const { loading: authLoading } = useAuth()
 
   const resolvedRelationship = relationship === 'other' ? relationshipOther.trim() : relationship
 
@@ -154,7 +157,7 @@ export default function JoinPage() {
 
             <Button 
               onClick={handleJoin}
-              disabled={!agreed || code.length !== 6 || !displayName.trim() || loading}
+              disabled={!agreed || code.length !== 6 || !displayName.trim() || loading || authLoading}
               className="w-full h-12 bg-sage-500 hover:bg-sage-400 text-white"
             >
               {loading ? (
