@@ -26,16 +26,18 @@ export function useAuth() {
       if (firebaseUser) {
         setUser(firebaseUser)
         await syncSessionCookie(firebaseUser)
+        // Only mark ready after the session cookie is written
+        setLoading(false)
       } else {
-        // Auto sign in anonymously
+        // Auto sign in anonymously; onAuthStateChanged will fire again with the
+        // new user, at which point we sync the cookie and set loading=false
         try {
           await firebaseSignInAnonymously(auth)
-          // onAuthStateChanged will fire again with the new user
         } catch (err) {
           console.error('Anonymous sign-in failed:', err)
+          setLoading(false)
         }
       }
-      setLoading(false)
     })
 
     return unsubscribe

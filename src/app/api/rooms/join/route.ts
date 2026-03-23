@@ -23,10 +23,12 @@ export async function POST(request: NextRequest) {
     const { uid } = authResult
 
     // Find room by code
-    const roomSnap = await adminDb.collection('rooms').where('code', '==', code.toUpperCase()).limit(1).get()
+    const normalizedCode = code.toUpperCase()
+    const roomSnap = await adminDb.collection('rooms').where('code', '==', normalizedCode).limit(1).get()
 
     if (roomSnap.empty) {
-      return NextResponse.json({ error: 'Unable to join room' }, { status: 404 })
+      console.error(`Join: room not found for code="${normalizedCode}" uid=${uid}`)
+      return NextResponse.json({ error: 'Room not found' }, { status: 404 })
     }
 
     const roomDoc = roomSnap.docs[0]
@@ -47,7 +49,8 @@ export async function POST(request: NextRequest) {
     // Check current member count
     const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).get()
     if (membersSnap.size >= 2) {
-      return NextResponse.json({ error: 'Unable to join room' }, { status: 403 })
+      console.error(`Join: room ${roomId} is full (${membersSnap.size} members) uid=${uid}`)
+      return NextResponse.json({ error: 'Room is full' }, { status: 403 })
     }
 
     const now = new Date().toISOString()

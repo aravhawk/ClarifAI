@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     })
 
     const roomId = roomRef.id
+    console.log(`Room created: id=${roomId} code=${code} uid=${uid}`)
 
     // Add creator as first member
     try {
