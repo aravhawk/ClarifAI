@@ -33,7 +33,7 @@ export async function POST(
       created_at: new Date().toISOString(),
     })
 
-    // Stream response from Vercel AI Gateway
+    // Stream response from Kilo Gateway
     const response = await gateway.chat.completions.create({
       model: AI_MODEL,
       messages: [

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
-import { createAiGatewayClient, AI_MODEL, REASONING_TOKENS, MAX_TOKENS } from '@/lib/ai-gateway'
+import { createAiGatewayClient, AI_MODEL, MAX_TOKENS } from '@/lib/ai-gateway'
 import { ANALYSIS_SYSTEM_PROMPT, buildAnalysisPrompt, detectSafetyLevel, validateAnalysis } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
-import type { AiGatewayChatCompletionCreateParams } from '@/lib/ai-gateway.types'
 
 export async function POST(
   request: NextRequest,
@@ -87,17 +86,15 @@ export async function POST(
       return NextResponse.json({ analysis: criticalAnalysisJson, safetyLevel: 'critical' })
     }
 
-    // Call Vercel AI Gateway with extended reasoning token budget
-    const completionParams: AiGatewayChatCompletionCreateParams = {
+    // Call Kilo Gateway for AI analysis
+    const response = await gateway.chat.completions.create({
       model: AI_MODEL,
       messages: [
         { role: 'system', content: ANALYSIS_SYSTEM_PROMPT },
         { role: 'user', content: buildAnalysisPrompt(entryA, entryB, relationshipA, relationshipB) },
       ],
       max_tokens: MAX_TOKENS,
-      reasoning: { max_tokens: REASONING_TOKENS },
-    }
-    const response = await gateway.chat.completions.create(completionParams)
+    })
 
     const content = response.choices[0]?.message?.content
     if (!content) {

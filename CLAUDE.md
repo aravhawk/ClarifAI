@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Clarifai is a Next.js 16 relationship mediation application that helps couples and roommates have productive conversations through AI-guided conflict resolution. The app uses Supabase for real-time data, Vercel AI Gateway/Claude for AI analysis, and follows evidence-based conflict resolution methods (Gottman Method, Nonviolent Communication).
+Clarifai is a Next.js 16 relationship mediation application that helps couples and roommates have productive conversations through AI-guided conflict resolution. The app uses Supabase for real-time data, Kilo Gateway/MiniMax for AI analysis, and follows evidence-based conflict resolution methods (Gottman Method, Nonviolent Communication).
 
 ## Development Commands
 
@@ -102,7 +102,7 @@ if (!messageValidation.valid) {
 **Key API Routes**:
 - `/api/rooms` - Create room
 - `/api/rooms/join` - Join existing room
-- `/api/rooms/[roomId]/analyze` - Trigger AI analysis (uses Vercel AI Gateway with reasoning tokens)
+- `/api/rooms/[roomId]/analyze` - Trigger AI analysis (uses Kilo Gateway)
 - `/api/rooms/[roomId]/messages` - Send/fetch messages
 - `/api/rooms/[roomId]/messages/check` - Tone check (FAILS CLOSED on AI error)
 - `/api/rooms/[roomId]/pause` - Pause management
@@ -112,10 +112,9 @@ if (!messageValidation.valid) {
 
 ### AI Integration
 
-**Vercel AI Gateway Configuration**:
-- Model: `anthropic/claude-haiku-4.5` (defined in `src/lib/ai-gateway.ts`)
-- Uses extended reasoning API for analysis (4000 reasoning tokens)
-- Constants in `src/lib/constants.ts`: `REASONING_TOKENS`, `GUIDANCE_MAX_TOKENS`
+**Kilo Gateway Configuration**:
+- Model: `minimax/minimax-m2.5:free` (defined in `src/lib/ai-gateway.ts`)
+- Constants in `src/lib/constants.ts`: `GUIDANCE_MAX_TOKENS`
 
 **AI Prompt System** (`src/lib/prompts.ts`):
 - `ANALYSIS_SYSTEM_PROMPT` - Initial analysis using Gottman Method + NVC
@@ -142,7 +141,6 @@ PAUSE_DURATION_MS = 5 * 60 * 1000  // 5 minutes
 MAX_PAUSES_PER_USER = 2
 
 // AI token limits
-REASONING_TOKENS = 4000
 GUIDANCE_MAX_TOKENS = 2000
 
 // Relationship options (shared by create/join)
@@ -207,7 +205,7 @@ Required in `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-AI_GATEWAY_API_KEY=
+KILO_API_KEY=
 ```
 
 ## Common Patterns

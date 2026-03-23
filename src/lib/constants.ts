@@ -7,7 +7,6 @@ export const PAUSE_DURATION_MS = 5 * 60 * 1000
 export const MAX_PAUSES_PER_USER = 2
 
 // AI token limits
-export const REASONING_TOKENS = 4000
 export const GUIDANCE_MAX_TOKENS = 2000
 
 // Relationship options (shared by create/join pages)
