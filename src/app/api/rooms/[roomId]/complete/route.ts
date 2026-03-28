@@ -29,7 +29,7 @@ export async function POST(
 
     const room = roomSnap.data()!
     const analysis = analysisSnap.data()!
-    const entries = entriesSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as any[]
+    const entries = entriesSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as { user_id: string; text?: string }[]
     const userAId = membersSnap.docs[0]?.id
 
     const entryA = entries.find(e => e.user_id === userAId)

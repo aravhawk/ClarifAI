@@ -29,7 +29,7 @@ function ChatContent() {
   const router = useRouter()
   const params = useParams()
   const roomId = params.roomId as string
-  const { room, members, currentUserId, analysis, refreshRoom } = useRoom()
+  const { room, members, currentUserId, refreshRoom } = useRoom()
   const { 
     messages, 
     turnState, 
@@ -183,10 +183,6 @@ function ChatContent() {
     } catch (err) {
       console.error('Failed to end pause:', err)
     }
-  }
-
-  const handleComplete = () => {
-    router.push(`/room/${roomId}/complete`)
   }
 
   const handleRequestEnd = async () => {

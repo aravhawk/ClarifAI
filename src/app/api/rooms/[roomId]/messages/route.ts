@@ -58,7 +58,7 @@ export async function POST(
 
     // Get members ordered by joined_at
     const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).orderBy('joined_at', 'asc').get()
-    const memberDocs = membersSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as any[]
+    const memberDocs = membersSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as { user_id: string; display_name?: string; relationship_to_other?: string }[]
 
     const userAId = memberDocs[0]?.user_id
     const userBId = memberDocs[1]?.user_id
@@ -94,7 +94,7 @@ export async function POST(
 
     // Get all messages for guidance
     const allMessagesSnap = await adminDb.collection(`rooms/${roomId}/messages`).orderBy('created_at', 'asc').get()
-    const allMessages = allMessagesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
+    const allMessages = allMessagesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as { id: string; user_id: string; text: string; tone_labels?: string[] }[]
 
     // Get analysis for context
     const analysisSnap = await adminDb.doc(`rooms/${roomId}/analysis/main`).get()

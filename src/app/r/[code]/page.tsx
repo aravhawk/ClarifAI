@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 
@@ -8,20 +8,17 @@ export default function ShareLinkPage() {
   const router = useRouter()
   const params = useParams()
   const code = params.code as string
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (code) {
       router.replace(`/join?code=${code}`)
-    } else {
-      setError('Missing room code')
     }
   }, [code, router])
 
-  if (error) {
+  if (!code) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center px-6 py-12">
-        <p className="text-warm-600">{error}</p>
+        <p className="text-warm-600">Missing room code</p>
       </main>
     )
   }

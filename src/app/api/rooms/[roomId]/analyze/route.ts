@@ -28,17 +28,17 @@ export async function POST(
 
     // Get members ordered by joined_at
     const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).orderBy('joined_at', 'asc').get()
-    const orderedMembers = membersSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as any[]
+    const orderedMembers = membersSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as { user_id: string; relationship_to_other?: string }[]
 
     // Get all entries
     const entriesSnap = await adminDb.collection(`rooms/${roomId}/entries`).get()
-    const entries = entriesSnap.docs.map(d => ({ user_id: d.id, ...d.data() }))
+    const entries = entriesSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as { user_id: string; text?: string; submitted_at?: string }[]
 
     if (entries.length !== 2) {
       return NextResponse.json({ error: 'Both entries required' }, { status: 400 })
     }
 
-    if (!entries.every((e: any) => e.submitted_at)) {
+    if (!entries.every((e) => e.submitted_at)) {
       return NextResponse.json({ error: 'Both entries must be submitted' }, { status: 400 })
     }
 
@@ -47,8 +47,8 @@ export async function POST(
     const relationshipA = orderedMembers[0]?.relationship_to_other
     const relationshipB = orderedMembers[1]?.relationship_to_other
 
-    const entryA = (entries.find((e: any) => e.user_id === userAId) as any)?.text || ''
-    const entryB = (entries.find((e: any) => e.user_id === userBId) as any)?.text || ''
+    const entryA = entries.find((e) => e.user_id === userAId)?.text || ''
+    const entryB = entries.find((e) => e.user_id === userBId)?.text || ''
 
     // Pre-check safety
     const safetycheckA = detectSafetyLevel(entryA)
@@ -119,8 +119,8 @@ export async function POST(
       analysis.safetyLevel === 'warning' || preSafetyLevel === 'warning' ? 'warning' : 'normal'
 
     const horsemen = [
-      ...analysis.personA.patterns.map((p: any) => p.type),
-      ...analysis.personB.patterns.map((p: any) => p.type),
+      ...analysis.personA.patterns.map((p: { type: string }) => p.type),
+      ...analysis.personB.patterns.map((p: { type: string }) => p.type),
     ]
 
     await adminDb.doc(`rooms/${roomId}/analysis/main`).set({

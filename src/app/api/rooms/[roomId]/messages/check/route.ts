@@ -74,7 +74,7 @@ export async function POST(
       .orderBy('created_at', 'desc').limit(5).get()
     const recentMessages = recentSnap.docs.map(d => d.data()).reverse()
     const conversationContext = recentMessages.length > 0
-      ? recentMessages.map((m: any) => `- "${m.text}"`).join('\n')
+      ? recentMessages.map((m) => `- "${m.text}"`).join('\n')
       : undefined
 
     // Call AI for tone analysis

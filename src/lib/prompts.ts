@@ -341,8 +341,6 @@ export function buildLiveGuidancePrompt(
 
   const speakerName = currentSpeaker === 'A' ? nameA : nameB
   const partnerName = currentSpeaker === 'A' ? nameB : nameA
-  const speakerPronouns = currentSpeaker === 'A' ? pronounsA : pronounsB
-  const partnerPronouns = currentSpeaker === 'A' ? pronounsB : pronounsA
 
   return `Provide guidance after this message in a conflict resolution conversation.
 
