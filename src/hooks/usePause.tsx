@@ -34,7 +34,6 @@ export function usePause(roomId: string, currentUserId: string) {
   // Client-side countdown timer
   useEffect(() => {
     if (!activePause) {
-      setPauseTimeLeft(null)
       return
     }
 
@@ -42,25 +41,39 @@ export function usePause(roomId: string, currentUserId: string) {
     const initialRemaining = Math.max(0, Math.floor((resumeAt - Date.now()) / 1000))
 
     if (initialRemaining <= 0) {
-      setActivePause(null)
-      setPauseTimeLeft(null)
+      // Avoid calling setActivePause inside an effect that depends on it
+      // Let the snapshot handle state changes when possible.
       return
     }
 
-    setPauseTimeLeft(initialRemaining)
+    // Initialize timer only once per active pause
+    let mounted = true
+    let currentRemaining = initialRemaining
 
     const interval = setInterval(() => {
-      setPauseTimeLeft(prev => {
-        if (prev === null || prev <= 1) {
-          setActivePause(null)
-          clearInterval(interval)
-          return null
-        }
-        return prev - 1
-      })
+      if (!mounted) return
+
+      currentRemaining -= 1
+
+      if (currentRemaining <= 0) {
+        setPauseTimeLeft(null)
+        clearInterval(interval)
+      } else {
+        setPauseTimeLeft(currentRemaining)
+      }
     }, 1000)
 
-    return () => clearInterval(interval)
+    // Initialize state within setTimeout to avoid synchronous setState inside effect
+    setTimeout(() => {
+      if (mounted) {
+        setPauseTimeLeft(initialRemaining)
+      }
+    }, 0)
+
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
   }, [activePause])
 
   const triggerPause = useCallback(async () => {

@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
+import type { RoomTurnState } from '@/types/room'
 
-export function useEndRequest(roomId: string, turnState: any, setTurnState: (state: any) => void) {
+export function useEndRequest(roomId: string, turnState: RoomTurnState | null, setTurnState: (state: RoomTurnState) => void) {
   const requestEnd = useCallback(async () => {
     const res = await fetch(`/api/rooms/${roomId}/end`, { method: 'POST' })
 

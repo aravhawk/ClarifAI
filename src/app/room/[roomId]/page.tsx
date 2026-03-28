@@ -13,7 +13,7 @@ export default function RoomEntryPage() {
   const router = useRouter()
   const params = useParams()
   const roomId = params.roomId as string
-  const { room, myEntry, partnerEntry, memberCount, bothSubmitted, loading, error, currentUserId, refreshRoom } = useRoom()
+  const { room, myEntry, partnerEntry, memberCount, bothSubmitted, loading, error, refreshRoom } = useRoom()
   
   const [text, setText] = useState('')
   const [submitting, setSubmitting] = useState(false)

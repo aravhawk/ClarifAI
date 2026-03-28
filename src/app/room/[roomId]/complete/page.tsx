@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useState, Suspense } from 'react'
+import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useRoom } from '@/hooks/useRoom'
 import { Button } from '@/components/ui/button'
@@ -45,7 +45,6 @@ function SentimentSlider({
 }
 
 function CompletePageContent() {
-  const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
   const roomId = params.roomId as string

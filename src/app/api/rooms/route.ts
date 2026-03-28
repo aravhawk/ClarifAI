@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
 import { requireAuth } from '@/lib/api/auth'
 import { generateRoomCode } from '@/lib/utils/room'
-import { FieldValue } from 'firebase-admin/firestore'
 
 export async function POST(request: Request) {
   try {
