@@ -56,7 +56,7 @@ export async function createTaskCompletion(
 ): Promise<ChatCompletionsCreateResponse> {
   const { client, model } = getAiGatewayForTask(taskType)
 
-  let latestError: unknown = new Error('AI request failed')
+  let latestError: unknown
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       return await client.chat.completions.create({
@@ -71,7 +71,7 @@ export async function createTaskCompletion(
     }
   }
 
-  throw latestError instanceof Error ? latestError : new Error('AI request failed')
+  throw latestError instanceof Error ? latestError : new Error('AI request failed after retries')
 }
 
 export async function createTaskCompletionStream(
@@ -80,7 +80,7 @@ export async function createTaskCompletionStream(
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const { client, model } = getAiGatewayForTask(taskType)
 
-  let latestError: unknown = new Error('AI stream request failed')
+  let latestError: unknown
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       return await client.chat.completions.create({
@@ -96,5 +96,5 @@ export async function createTaskCompletionStream(
     }
   }
 
-  throw latestError instanceof Error ? latestError : new Error('AI stream request failed')
+  throw latestError instanceof Error ? latestError : new Error('AI stream request failed after retries')
 }

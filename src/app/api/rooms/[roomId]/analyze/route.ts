@@ -111,7 +111,7 @@ export async function POST(
         break
       } catch (parseError) {
         console.error(`JSON parse error (attempt ${parseAttempt}/${MAX_PARSE_ATTEMPTS}):`, parseError)
-        console.error('Raw analysis content:', content)
+        console.error(`Raw analysis content (attempt ${parseAttempt}/${MAX_PARSE_ATTEMPTS}):`, content)
       }
     }
 
