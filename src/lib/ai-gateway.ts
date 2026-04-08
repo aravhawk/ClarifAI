@@ -56,7 +56,7 @@ export async function createTaskCompletion(
 ): Promise<ChatCompletionsCreateResponse> {
   const { client, model } = getAiGatewayForTask(taskType)
 
-  let latestError: unknown
+  let latestError: unknown = new Error('AI request failed')
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       return await client.chat.completions.create({
@@ -67,7 +67,7 @@ export async function createTaskCompletion(
       latestError = error
       const canRetry = attempt < MAX_ATTEMPTS && isRetryableError(error)
       if (!canRetry) throw error
-      await sleep(BACKOFF_DELAYS_MS[attempt - 1])
+      await sleep(BACKOFF_DELAYS_MS[Math.min(attempt - 1, BACKOFF_DELAYS_MS.length - 1)])
     }
   }
 
@@ -78,9 +78,23 @@ export async function createTaskCompletionStream(
   taskType: Extract<AITaskType, 'coach'>,
   params: Omit<ChatCompletionsCreateParams, 'model' | 'stream'>
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
-  const response = await createTaskCompletion(taskType, {
-    ...params,
-    stream: true,
-  } as Omit<ChatCompletionsCreateParams, 'model'>)
-  return response as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>
+  const { client, model } = getAiGatewayForTask(taskType)
+
+  let latestError: unknown = new Error('AI stream request failed')
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await client.chat.completions.create({
+        ...params,
+        model,
+        stream: true,
+      })
+    } catch (error) {
+      latestError = error
+      const canRetry = attempt < MAX_ATTEMPTS && isRetryableError(error)
+      if (!canRetry) throw error
+      await sleep(BACKOFF_DELAYS_MS[Math.min(attempt - 1, BACKOFF_DELAYS_MS.length - 1)])
+    }
+  }
+
+  throw latestError instanceof Error ? latestError : new Error('AI stream request failed')
 }
