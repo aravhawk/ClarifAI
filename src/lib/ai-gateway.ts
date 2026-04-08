@@ -55,7 +55,7 @@ export async function createTaskCompletion(
 ): Promise<ChatCompletionsCreateResponse> {
   const { client, model } = getAiGatewayForTask(taskType)
 
-  let lastError: unknown
+  let latestError: unknown
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       return await client.chat.completions.create({
@@ -63,14 +63,14 @@ export async function createTaskCompletion(
         model,
       } as ChatCompletionsCreateParams)
     } catch (error) {
-      lastError = error
+      latestError = error
       const canRetry = attempt < MAX_ATTEMPTS && isRetryableError(error)
       if (!canRetry) throw error
-      await sleep(BACKOFF_DELAYS_MS[Math.min(attempt - 1, BACKOFF_DELAYS_MS.length - 1)])
+      await sleep(BACKOFF_DELAYS_MS[attempt - 1])
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('AI request failed')
+  throw latestError instanceof Error ? latestError : new Error('AI request failed')
 }
 
 export async function createTaskCompletionStream(
