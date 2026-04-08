@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
-import { createAiGatewayClient, AI_MODEL, MAX_TOKENS } from '@/lib/ai-gateway'
+import { ANALYSIS_MAX_TOKENS, createTaskCompletion } from '@/lib/ai-gateway'
 import { ANALYSIS_SYSTEM_PROMPT, buildAnalysisPrompt, detectSafetyLevel, validateAnalysis } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
+
+const MAX_PARSE_ATTEMPTS = 3
 
 export async function POST(
   request: NextRequest,
@@ -14,8 +16,6 @@ export async function POST(
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
     const { uid } = authResult
-
-    const gateway = createAiGatewayClient()
 
     // Check if analysis already exists
     const existingAnalysis = await adminDb.doc(`rooms/${roomId}/analysis/main`).get()
@@ -86,27 +86,37 @@ export async function POST(
       return NextResponse.json({ analysis: criticalAnalysisJson, safetyLevel: 'critical' })
     }
 
-    // Call Kilo Gateway for AI analysis
-    const response = await gateway.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: 'system', content: ANALYSIS_SYSTEM_PROMPT },
-        { role: 'user', content: buildAnalysisPrompt(entryA, entryB, relationshipA, relationshipB) },
-      ],
-      max_tokens: MAX_TOKENS,
-    })
+    let analysis: unknown
+    let parsed = false
+    let lastRawContent: string | null = null
+    for (let parseAttempt = 1; parseAttempt <= MAX_PARSE_ATTEMPTS; parseAttempt++) {
+      const response = await createTaskCompletion('analysis', {
+        messages: [
+          { role: 'system', content: ANALYSIS_SYSTEM_PROMPT },
+          { role: 'user', content: buildAnalysisPrompt(entryA, entryB, relationshipA, relationshipB) },
+        ],
+        max_tokens: ANALYSIS_MAX_TOKENS,
+      })
 
-    const content = response.choices[0]?.message?.content
-    if (!content) {
-      return NextResponse.json({ error: 'AI response empty' }, { status: 500 })
+      const content = response.choices[0]?.message?.content
+      if (!content) {
+        return NextResponse.json({ error: 'AI response empty' }, { status: 500 })
+      }
+
+      lastRawContent = content
+      try {
+        const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim()
+        analysis = JSON.parse(cleanedContent)
+        parsed = true
+        break
+      } catch (parseError) {
+        console.error(`JSON parse error (attempt ${parseAttempt}/${MAX_PARSE_ATTEMPTS}):`, parseError)
+        console.error(`Raw analysis content (attempt ${parseAttempt}/${MAX_PARSE_ATTEMPTS}):`, content)
+      }
     }
 
-    let analysis
-    try {
-      const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim()
-      analysis = JSON.parse(cleanedContent)
-    } catch (parseError) {
-      console.error('JSON parse error:', parseError, content)
+    if (!parsed) {
+      console.error('Final raw analysis content after parse retries:', lastRawContent)
       return NextResponse.json({ error: 'Failed to parse AI response' }, { status: 500 })
     }
 

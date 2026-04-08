@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
-import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
+import { createTaskCompletion } from '@/lib/ai-gateway'
 import { TONE_CHECK_SYSTEM_PROMPT, buildToneCheckPrompt, shouldBlockMessage } from '@/lib/prompts'
 import type { ToneCheckResult } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
@@ -78,9 +78,7 @@ export async function POST(
       : undefined
 
     // Call AI for tone analysis
-    const gateway = createAiGatewayClient()
-    const response = await gateway.chat.completions.create({
-      model: AI_MODEL,
+    const response = await createTaskCompletion('tone-check', {
       messages: [
         { role: 'system', content: TONE_CHECK_SYSTEM_PROMPT },
         { role: 'user', content: buildToneCheckPrompt(message, conversationContext) },

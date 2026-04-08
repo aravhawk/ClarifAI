@@ -1,15 +1,113 @@
 import OpenAI from 'openai'
 
-export const AI_MODEL = process.env.AI_GATEWAY_MODEL ?? 'minimax/minimax-m2.5:free'
-export const MAX_TOKENS = 8000
+const LLAMA_BASE_URL = 'https://api.llama.com/compat/v1/'
+const HEAVY_MODEL = 'Llama-4-Maverick-17B-128E-Instruct-FP8'
+const LIGHT_MODEL = 'Llama-4-Scout-17B-16E-Instruct-FP8'
+const MAX_ATTEMPTS = 3
+const BACKOFF_DELAYS_MS = [1000, 2000, 4000]
+export const ANALYSIS_MAX_TOKENS = 8000
+
+export type AITaskType = 'analysis' | 'guidance' | 'tone-check' | 'coach'
+
+type ChatCompletionsCreateParams = Parameters<OpenAI['chat']['completions']['create']>[0]
+type ChatCompletionsCreateParamsNonStreaming = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+type ChatCompletionsCreateParamsStreaming = OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
+type TaskCompletionParams =
+  | Omit<ChatCompletionsCreateParamsNonStreaming, 'model'>
+  | Omit<ChatCompletionsCreateParamsStreaming, 'model'>
+type ChatCompletionsCreateResponse = Awaited<ReturnType<OpenAI['chat']['completions']['create']>>
+
+function getLlamaApiKey(): string {
+  if (!process.env.LLAMA_API_KEY) {
+    throw new Error('LLAMA_API_KEY is not set')
+  }
+  return process.env.LLAMA_API_KEY
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function getStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  if (!('status' in error)) return undefined
+  const status = (error as { status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
+}
+
+function isRetryableError(error: unknown): boolean {
+  const status = getStatusCode(error)
+  return status === 429 || (typeof status === 'number' && status >= 500 && status < 600)
+}
 
 export function createAiGatewayClient() {
-  if (!process.env.KILO_API_KEY) {
-    throw new Error('KILO_API_KEY is not set')
+  return new OpenAI({
+    baseURL: LLAMA_BASE_URL,
+    apiKey: getLlamaApiKey(),
+  })
+}
+
+export function getAiGatewayForTask(taskType: AITaskType) {
+  const model = taskType === 'analysis' || taskType === 'guidance' ? HEAVY_MODEL : LIGHT_MODEL
+  return {
+    client: createAiGatewayClient(),
+    model,
+  }
+}
+
+export async function createTaskCompletion(
+  taskType: AITaskType,
+  params: Omit<ChatCompletionsCreateParamsNonStreaming, 'model'>
+): Promise<OpenAI.Chat.Completions.ChatCompletion>
+export async function createTaskCompletion(
+  taskType: AITaskType,
+  params: Omit<ChatCompletionsCreateParamsStreaming, 'model'>
+): Promise<ChatCompletionsCreateResponse>
+export async function createTaskCompletion(
+  taskType: AITaskType,
+  params: TaskCompletionParams
+): Promise<ChatCompletionsCreateResponse> {
+  const { client, model } = getAiGatewayForTask(taskType)
+
+  let latestError: unknown
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await client.chat.completions.create({
+        ...params,
+        model,
+      } as ChatCompletionsCreateParams)
+    } catch (error) {
+      latestError = error
+      const canRetry = attempt < MAX_ATTEMPTS && isRetryableError(error)
+      if (!canRetry) throw error
+      await sleep(BACKOFF_DELAYS_MS[Math.min(attempt - 1, BACKOFF_DELAYS_MS.length - 1)])
+    }
   }
 
-  return new OpenAI({
-    baseURL: 'https://api.kilo.ai/api/gateway',
-    apiKey: process.env.KILO_API_KEY,
-  })
+  throw latestError instanceof Error ? latestError : new Error('AI request failed after retries')
+}
+
+export async function createTaskCompletionStream(
+  taskType: Extract<AITaskType, 'coach'>,
+  params: Omit<ChatCompletionsCreateParams, 'model' | 'stream'>
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  const { client, model } = getAiGatewayForTask(taskType)
+
+  let latestError: unknown
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await client.chat.completions.create({
+        ...params,
+        model,
+        stream: true,
+      })
+    } catch (error) {
+      latestError = error
+      const canRetry = attempt < MAX_ATTEMPTS && isRetryableError(error)
+      if (!canRetry) throw error
+      await sleep(BACKOFF_DELAYS_MS[Math.min(attempt - 1, BACKOFF_DELAYS_MS.length - 1)])
+    }
+  }
+
+  throw latestError instanceof Error ? latestError : new Error('AI stream request failed after retries')
 }

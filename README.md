@@ -14,7 +14,7 @@ Clarifai is a Next.js 16 relationship mediation app that helps couples and roomm
 
 - Next.js 16 (App Router) + TypeScript
 - Supabase (Auth, Postgres, Realtime, RLS)
-- Kilo Gateway (MiniMax M2.5) for analysis and guidance
+- Meta Llama API (Maverick + Scout) for analysis and guidance
 - Tailwind CSS v4 + Radix UI
 
 ## Core Flow
@@ -33,7 +33,7 @@ Clarifai is a Next.js 16 relationship mediation app that helps couples and roomm
 - Node.js 20+
 - npm 10+
 - Supabase project (URL + anon key + service role key)
-- Kilo Gateway API key
+- Meta Llama API key
 
 ### Environment Variables
 
@@ -43,7 +43,7 @@ Create `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-KILO_API_KEY=
+LLAMA_API_KEY=
 ```
 
 ### Install & Run

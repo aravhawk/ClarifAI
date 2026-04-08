@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
-import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
+import { createTaskCompletion } from '@/lib/ai-gateway'
 import { LIVE_GUIDANCE_SYSTEM_PROMPT, buildLiveGuidancePrompt, shouldBlockMessage, type PersonInfo } from '@/lib/prompts'
 import type { LiveGuidanceResult } from '@/lib/prompts'
 import { GUIDANCE_MAX_TOKENS } from '@/lib/constants'
@@ -111,9 +111,7 @@ export async function POST(
     // Call AI for guidance
     let guidance: LiveGuidanceResult | null = null
     try {
-      const gateway = createAiGatewayClient()
-      const response = await gateway.chat.completions.create({
-        model: AI_MODEL,
+      const response = await createTaskCompletion('guidance', {
         messages: [
           { role: 'system', content: LIVE_GUIDANCE_SYSTEM_PROMPT },
           { role: 'user', content: buildLiveGuidancePrompt(messageHistory, currentSpeaker, contextSummary, personA, personB) },

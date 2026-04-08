@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
-import { createAiGatewayClient, AI_MODEL } from '@/lib/ai-gateway'
+import { createTaskCompletionStream } from '@/lib/ai-gateway'
 import { COACH_SYSTEM_PROMPT, buildCoachPrompt } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
 
@@ -23,8 +23,6 @@ export async function POST(
     if (authResult instanceof NextResponse) return authResult
     const { uid } = authResult
 
-    const gateway = createAiGatewayClient()
-
     // Log coach usage event
     await adminDb.collection(`rooms/${roomId}/events`).add({
       user_id: uid,
@@ -33,15 +31,13 @@ export async function POST(
       created_at: new Date().toISOString(),
     })
 
-    // Stream response from Kilo Gateway
-    const response = await gateway.chat.completions.create({
-      model: AI_MODEL,
+    // Stream response from Meta Llama
+    const response = await createTaskCompletionStream('coach', {
       messages: [
         { role: 'system', content: COACH_SYSTEM_PROMPT },
         { role: 'user', content: buildCoachPrompt(statement, context) },
       ],
       max_tokens: 1000,
-      stream: true,
     })
 
     const encoder = new TextEncoder()
