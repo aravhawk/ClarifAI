@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/firebase/server'
-import { createTaskCompletion } from '@/lib/ai-gateway'
+import { ANALYSIS_MAX_TOKENS, createTaskCompletion } from '@/lib/ai-gateway'
 import { ANALYSIS_SYSTEM_PROMPT, buildAnalysisPrompt, detectSafetyLevel, validateAnalysis } from '@/lib/prompts'
 import { requireRoomMember } from '@/lib/api/auth'
+
+const MAX_PARSE_ATTEMPTS = 3
 
 export async function POST(
   request: NextRequest,
@@ -87,13 +89,13 @@ export async function POST(
     let analysis: unknown
     let parsed = false
     let lastRawContent: string | null = null
-    for (let parseAttempt = 1; parseAttempt <= 3; parseAttempt++) {
+    for (let parseAttempt = 1; parseAttempt <= MAX_PARSE_ATTEMPTS; parseAttempt++) {
       const response = await createTaskCompletion('analysis', {
         messages: [
           { role: 'system', content: ANALYSIS_SYSTEM_PROMPT },
           { role: 'user', content: buildAnalysisPrompt(entryA, entryB, relationshipA, relationshipB) },
         ],
-        max_tokens: 8000,
+        max_tokens: ANALYSIS_MAX_TOKENS,
       })
 
       const content = response.choices[0]?.message?.content
@@ -108,7 +110,7 @@ export async function POST(
         parsed = true
         break
       } catch (parseError) {
-        console.error(`JSON parse error (attempt ${parseAttempt}/3):`, parseError)
+        console.error(`JSON parse error (attempt ${parseAttempt}/${MAX_PARSE_ATTEMPTS}):`, parseError)
         console.error('Raw analysis content:', content)
       }
     }

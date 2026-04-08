@@ -5,6 +5,7 @@ const HEAVY_MODEL = 'Llama-4-Maverick-17B-128E-Instruct-FP8'
 const LIGHT_MODEL = 'Llama-4-Scout-17B-16E-Instruct-FP8'
 const MAX_ATTEMPTS = 3
 const BACKOFF_DELAYS_MS = [1000, 2000, 4000]
+export const ANALYSIS_MAX_TOKENS = 8000
 
 export type AITaskType = 'analysis' | 'guidance' | 'tone-check' | 'coach'
 
@@ -76,9 +77,10 @@ export async function createTaskCompletion(
 export async function createTaskCompletionStream(
   taskType: Extract<AITaskType, 'coach'>,
   params: Omit<ChatCompletionsCreateParams, 'model' | 'stream'>
-): Promise<ChatCompletionsCreateResponse> {
-  return createTaskCompletion(taskType, {
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
+  const response = await createTaskCompletion(taskType, {
     ...params,
     stream: true,
   } as Omit<ChatCompletionsCreateParams, 'model'>)
+  return response as unknown as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>
 }
