@@ -10,6 +10,11 @@ export const ANALYSIS_MAX_TOKENS = 8000
 export type AITaskType = 'analysis' | 'guidance' | 'tone-check' | 'coach'
 
 type ChatCompletionsCreateParams = Parameters<OpenAI['chat']['completions']['create']>[0]
+type ChatCompletionsCreateParamsNonStreaming = OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+type ChatCompletionsCreateParamsStreaming = OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming
+type TaskCompletionParams =
+  | Omit<ChatCompletionsCreateParamsNonStreaming, 'model'>
+  | Omit<ChatCompletionsCreateParamsStreaming, 'model'>
 type ChatCompletionsCreateResponse = Awaited<ReturnType<OpenAI['chat']['completions']['create']>>
 
 function getLlamaApiKey(): string {
@@ -52,7 +57,15 @@ export function getAiGatewayForTask(taskType: AITaskType) {
 
 export async function createTaskCompletion(
   taskType: AITaskType,
-  params: Omit<ChatCompletionsCreateParams, 'model'>
+  params: Omit<ChatCompletionsCreateParamsNonStreaming, 'model'>
+): Promise<OpenAI.Chat.Completions.ChatCompletion>
+export async function createTaskCompletion(
+  taskType: AITaskType,
+  params: Omit<ChatCompletionsCreateParamsStreaming, 'model'>
+): Promise<ChatCompletionsCreateResponse>
+export async function createTaskCompletion(
+  taskType: AITaskType,
+  params: TaskCompletionParams
 ): Promise<ChatCompletionsCreateResponse> {
   const { client, model } = getAiGatewayForTask(taskType)
 
