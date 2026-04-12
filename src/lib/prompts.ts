@@ -187,6 +187,76 @@ export function detectSafetyLevel(text: string): 'normal' | 'warning' | 'critica
   return 'normal'
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isPatternDetection(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  const pattern = value as Record<string, unknown>
+  return (
+    ['criticism', 'contempt', 'defensiveness', 'stonewalling'].includes(pattern.type as string) &&
+    typeof pattern.evidence === 'string' &&
+    ['mild', 'moderate', 'strong'].includes(pattern.severity as string) &&
+    typeof pattern.reframe === 'string'
+  )
+}
+
+function isNvcTranslation(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  const translation = value as Record<string, unknown>
+  return (
+    typeof translation.observation === 'string' &&
+    typeof translation.feeling === 'string' &&
+    typeof translation.need === 'string' &&
+    typeof translation.request === 'string'
+  )
+}
+
+function isPersonAnalysis(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  const person = value as Record<string, unknown>
+  return (
+    isStringArray(person.feelings) &&
+    isStringArray(person.underlyingNeeds) &&
+    Array.isArray(person.patterns) &&
+    person.patterns.every(isPatternDetection) &&
+    isNvcTranslation(person.nvcTranslation) &&
+    typeof person.suggestedOpener === 'string' &&
+    typeof person.sentimentScore === 'number'
+  )
+}
+
+function isScriptSection(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  const section = value as Record<string, unknown>
+  return (
+    typeof section.id === 'string' &&
+    ['share', 'reflect', 'bridge', 'resolve'].includes(section.phase as string) &&
+    ['you', 'partner', 'both'].includes(section.speaker as string) &&
+    typeof section.durationSeconds === 'number' &&
+    typeof section.prompt === 'string' &&
+    typeof section.guidance === 'string'
+  )
+}
+
+function isCompromise(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+
+  const compromise = value as Record<string, unknown>
+  return (
+    typeof compromise.id === 'string' &&
+    typeof compromise.title === 'string' &&
+    typeof compromise.description === 'string' &&
+    typeof compromise.requiresFromYou === 'string' &&
+    typeof compromise.requiresFromPartner === 'string'
+  )
+}
+
 // Validate AI response matches expected schema
 export function validateAnalysis(data: unknown): data is AIAnalysis {
   if (!data || typeof data !== 'object') return false
@@ -195,13 +265,16 @@ export function validateAnalysis(data: unknown): data is AIAnalysis {
   
   return (
     typeof analysis.neutralAgenda === 'string' &&
-    typeof analysis.personA === 'object' &&
-    typeof analysis.personB === 'object' &&
-    Array.isArray(analysis.sharedNeeds) &&
+    isPersonAnalysis(analysis.personA) &&
+    isPersonAnalysis(analysis.personB) &&
+    isStringArray(analysis.sharedNeeds) &&
     Array.isArray(analysis.script) &&
+    analysis.script.every(isScriptSection) &&
     Array.isArray(analysis.compromises) &&
-    typeof analysis.conflictCategory === 'string' &&
-    ['normal', 'warning', 'critical'].includes(analysis.safetyLevel as string)
+    analysis.compromises.every(isCompromise) &&
+    ['chores', 'money', 'time', 'communication', 'boundaries', 'intimacy', 'family', 'work', 'other'].includes(analysis.conflictCategory as string) &&
+    ['normal', 'warning', 'critical'].includes(analysis.safetyLevel as string) &&
+    (analysis.safetyNotes === undefined || typeof analysis.safetyNotes === 'string')
   )
 }
 

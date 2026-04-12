@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useRoom } from '@/hooks/useRoom'
 import { Loader2 } from 'lucide-react'
@@ -13,11 +13,21 @@ export default function WaitingPage() {
   const { room, bothSubmitted, analysis, refreshRoom } = useRoom()
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const retryTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        window.clearTimeout(retryTimeoutRef.current)
+      }
+    }
+  }, [])
 
   // Trigger analysis when both submitted
   useEffect(() => {
     const triggerAnalysis = async () => {
       if (bothSubmitted && !analysis && !analyzing) {
+        setError(null)
         setAnalyzing(true)
         try {
           const res = await fetch(`/api/rooms/${roomId}/analyze`, { method: 'POST' })
@@ -31,7 +41,13 @@ export default function WaitingPage() {
             router.push('/resources')
           }
         } catch (err) {
+          if (retryTimeoutRef.current) {
+            window.clearTimeout(retryTimeoutRef.current)
+          }
           setError(err instanceof Error ? err.message : 'Failed to analyze')
+          retryTimeoutRef.current = window.setTimeout(() => {
+            setAnalyzing(false)
+          }, STATUS_POLL_INTERVAL)
         }
       }
     }
@@ -99,7 +115,9 @@ export default function WaitingPage() {
         </div>
 
         {error && (
-          <p className="mt-6 text-sm text-red-600 bg-red-50 p-3 rounded-lg">{error}</p>
+          <p className="mt-6 text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+            {error} Retrying automatically...
+          </p>
         )}
       </div>
     </main>

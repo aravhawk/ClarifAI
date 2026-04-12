@@ -5,6 +5,52 @@ import { ANALYSIS_SYSTEM_PROMPT, buildAnalysisPrompt, detectSafetyLevel, validat
 import { requireRoomMember } from '@/lib/api/auth'
 
 const MAX_PARSE_ATTEMPTS = 3
+const JSON_FENCE_PATTERN = /```(?:json)?\s*|\s*```/gi
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object' || !('status' in error)) return undefined
+  const status = (error as { status?: unknown }).status
+  return typeof status === 'number' ? status : undefined
+}
+
+function extractTextContent(content: unknown): string | null {
+  if (typeof content === 'string') {
+    const trimmed = content.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }
+
+  if (!Array.isArray(content)) {
+    return null
+  }
+
+  const joined = content
+    .map((part) => {
+      if (typeof part === 'string') return part
+      if (!part || typeof part !== 'object' || !('text' in part)) return ''
+      const text = (part as { text?: unknown }).text
+      return typeof text === 'string' ? text : ''
+    })
+    .join('')
+    .trim()
+
+  return joined.length > 0 ? joined : null
+}
+
+function extractJsonCandidate(content: string): string {
+  const cleaned = content.replace(JSON_FENCE_PATTERN, '').trim()
+  const firstBrace = cleaned.indexOf('{')
+  const lastBrace = cleaned.lastIndexOf('}')
+
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return cleaned.slice(firstBrace, lastBrace + 1)
+  }
+
+  return cleaned
+}
 
 export async function POST(
   request: NextRequest,
@@ -29,6 +75,9 @@ export async function POST(
     // Get members ordered by joined_at
     const membersSnap = await adminDb.collection(`rooms/${roomId}/members`).orderBy('joined_at', 'asc').get()
     const orderedMembers = membersSnap.docs.map(d => ({ user_id: d.id, ...d.data() })) as { user_id: string; relationship_to_other?: string }[]
+    if (orderedMembers.length !== 2) {
+      return NextResponse.json({ error: 'Two room members are required before analysis can start' }, { status: 400 })
+    }
 
     // Get all entries
     const entriesSnap = await adminDb.collection(`rooms/${roomId}/entries`).get()
@@ -49,6 +98,9 @@ export async function POST(
 
     const entryA = entries.find((e) => e.user_id === userAId)?.text || ''
     const entryB = entries.find((e) => e.user_id === userBId)?.text || ''
+    if (!entryA.trim() || !entryB.trim()) {
+      return NextResponse.json({ error: 'Both submitted entries must include text before analysis can start' }, { status: 400 })
+    }
 
     // Pre-check safety
     const safetycheckA = detectSafetyLevel(entryA)
@@ -98,14 +150,14 @@ export async function POST(
         max_tokens: ANALYSIS_MAX_TOKENS,
       })
 
-      const content = response.choices[0]?.message?.content
+      const content = extractTextContent(response.choices[0]?.message?.content)
       if (!content) {
         return NextResponse.json({ error: 'AI response empty' }, { status: 500 })
       }
 
       lastRawContent = content
       try {
-        const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim()
+        const cleanedContent = extractJsonCandidate(content)
         analysis = JSON.parse(cleanedContent)
         parsed = true
         break
@@ -156,6 +208,30 @@ export async function POST(
     return NextResponse.json({ analysis, safetyLevel: finalSafetyLevel })
   } catch (error) {
     console.error('Analyze error:', error)
+    const message = getErrorMessage(error)
+    const status = getErrorStatus(error)
+
+    if (message === 'LLAMA_API_KEY is not set') {
+      return NextResponse.json(
+        { error: 'AI analysis is not configured on the server' },
+        { status: 503 }
+      )
+    }
+
+    if (status === 429) {
+      return NextResponse.json(
+        { error: 'AI analysis is temporarily rate limited. Please retry.' },
+        { status: 503 }
+      )
+    }
+
+    if (typeof status === 'number' && status >= 500) {
+      return NextResponse.json(
+        { error: 'AI analysis provider failed. Please retry.' },
+        { status: 502 }
+      )
+    }
+
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

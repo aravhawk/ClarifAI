@@ -9,6 +9,11 @@ export async function PUT(
   try {
     const { roomId } = await params
     const { text, submit } = await request.json()
+    const normalizedText = typeof text === 'string' ? text : ''
+
+    if (submit && normalizedText.trim().length === 0) {
+      return NextResponse.json({ error: 'Entry text is required before submitting' }, { status: 400 })
+    }
 
     const authResult = await requireRoomMember(roomId)
     if (authResult instanceof NextResponse) return authResult
@@ -16,7 +21,7 @@ export async function PUT(
 
     const now = new Date().toISOString()
     const updateData: Record<string, unknown> = {
-      text: text || '',
+      text: normalizedText,
       updated_at: now,
     }
 
