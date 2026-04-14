@@ -1,6 +1,6 @@
-# Clarifai
+# ClarifAI
 
-Clarifai is a Next.js 16 relationship mediation app that helps couples and roommates move through conflict with AI-guided, evidence-based conversation support.
+ClarifAI is a Next.js 16 relationship mediation app that helps couples and roommates move through conflict with AI-guided, evidence-based conversation support.
 
 ## What It Does
 

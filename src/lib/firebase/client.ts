@@ -15,5 +15,6 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
 // To prevent auth initialisation issues during build time
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const auth = isBuild ? null as any : getAuth(app)
 export const db = getFirestore(app)
